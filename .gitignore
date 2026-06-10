@@ -1,3 +1,19 @@
 .env
 
+# Dados brutos
 raw_data/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Cache
+.cache/
+.cache.sqlite
+*.sqlite
+
+# Windows/WSL metadata
+*:Zone.Identifier
+
+# Python
+__pycache__/
+*.pyc
