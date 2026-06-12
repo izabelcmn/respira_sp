@@ -36,7 +36,3 @@ Operação
 ### Meteorologia
 - Open-Meteo - https://open-meteo.com/
 
----
-├── requirements.txt
-└── README.md
-# respira_sp
