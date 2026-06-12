@@ -36,18 +36,3 @@ Operação
 ### Meteorologia
 - Open-Meteo - https://open-meteo.com/
 
----
-
-## Estrutura do Projeto
-
-```text
-project/
-│
-├── data/
-├── figs/
-├── notebooks/
-├── src/
-├── .env.example
-├── requirements.txt
-└── README.md
-# respira_sp
