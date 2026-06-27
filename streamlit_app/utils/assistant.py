@@ -4,6 +4,9 @@ utils/assistant.py
 
 from __future__ import annotations
 import streamlit as st
+import os
+from google import genai
+from utils.air_quality import responder_qualidade_ar
 
 
 def _rule_based(q: str, reading: dict, iqar: float, label: str) -> str:
@@ -27,27 +30,57 @@ def _rule_based(q: str, reading: dict, iqar: float, label: str) -> str:
             f"ou o que é o PM2.5.")
 
 
-def answer(q: str, reading: dict, iqar: float, label: str) -> str:
-    """Ponto de entrada usado pela UI. Tenta o LLM; se falhar, usa as regras."""
-    key = st.secrets.get("ANTHROPIC_API_KEY", None) if hasattr(st, "secrets") else None
-    if not key:
-        return _rule_based(q, reading, iqar, label)
+def _build_context(df) -> str:
+    """Usa a estrutura contruída na função respoder_qualidade_ar()"""
+    resposta_tecnica = responder_qualidade_ar(df)
+
+    return f"""
+    Você é o assistente inteligente do projeto RESPIRA SP,
+    um sistema de previsão da qualidade do ar em São Paulo.
+
+    Use SOMENTE as informações técnicas abaixo para responder.
+
+    INFORMAÇÕES TÉCNICAS:
+    {resposta_tecnica}
+
+    Regras:
+    - Responda em português do Brasil.
+    - Seja curto, claro e prático.
+    - Não invente valores.
+    - Não altere a classificação CETESB.
+    - Se perguntarem sobre caminhada, corrida ou sair ao ar livre, use a recomendação de saúde.
+    - Não dê diagnóstico médico.
+    """
+
+
+def answer(q: str, df) -> str:
+    """
+    Usando Gemini
+    """
 
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=key)
-        system = (
-            "Você é o assistente do painel Respira SP de qualidade do ar de São Paulo. "
-            f"Leitura atual: PM2.5={reading['pm25']:.0f} µg/m³, IQAr={iqar:.0f} ({label}). "
-            "Responda em português, curto (até 3 frases), claro e prático."
+        client = genai.Client(
+            vertexai=True,
+            project=os.getenv("GOOGLE_CLOUD_PROJECT"),
+            location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
         )
-        msg = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=300,
-            system=system,
-            messages=[{"role": "user", "content": q}],
+
+        prompt = f"""
+{_build_context(df)}
+
+Pergunta do usuário:
+{q}
+
+Resposta:
+"""
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
         )
-        return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
-    except Exception:
-        # Qualquer falha (rede, cota, pacote ausente) -> cai no modo regra.
-        return _rule_based(q, reading, iqar, label)
+
+        return response.text
+
+    except Exception as e:
+        st.warning(f"LLM indisponível. Usando resposta técnica. Erro: {e}")
+        return _rule_based(q, df)
