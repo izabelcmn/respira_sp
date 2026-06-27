@@ -1,0 +1,35 @@
+{
+    "estrategia_01": {
+        "colsample_bytree": 0.8,
+        "learning_rate": 0.03,
+        "max_depth": 3,
+        "min_child_samples": 50,
+        "n_estimators": 150,
+        "num_leaves": 7,
+        "reg_alpha": 0.1,
+        "reg_lambda": 1,
+        "subsample": 0.8
+    },
+    "estrategia_02": {
+        "colsample_bytree": 0.8,
+        "learning_rate": 0.03,
+        "max_depth": 3,
+        "min_child_samples": 30,
+        "n_estimators": 150,
+        "num_leaves": 15,
+        "reg_alpha": 0.1,
+        "reg_lambda": 1,
+        "subsample": 0.8
+    },
+    "estrategia_03": {
+        "colsample_bytree": 0.8,
+        "learning_rate": 0.03,
+        "max_depth": 3,
+        "min_child_samples": 50,
+        "n_estimators": 150,
+        "num_leaves": 7,
+        "reg_alpha": 0.1,
+        "reg_lambda": 1,
+        "subsample": 0.8
+    }
+}
