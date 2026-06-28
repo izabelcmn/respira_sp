@@ -25,7 +25,7 @@ inject_css()
 
 # --------------------------------------------------------------------------- #
 # Dados: roda o LightGBM ao vivo (ou cai no sintético se faltar .pkl/CSV).
-# --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- 
 bundle = lightgbm_forecast(n=24)
 fc = bundle["forecast"]
 reading = latest_reading(bundle)
