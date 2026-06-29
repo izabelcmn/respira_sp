@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import joblib
-
+from pathlib import Path
 from colorama import Fore, Style
 
 
@@ -120,7 +120,8 @@ def preprocess_features(X: pd.DataFrame) ->  pd.DataFrame:
     X_processed = X_processed.drop(columns=[TARGET])
 
     # Validate engineered features
-    features = joblib.load("../models/lightgbm_features.pkl")
+    from respira_sp.params import LOCAL_REGISTRY_PATH
+    features = joblib.load(Path(LOCAL_REGISTRY_PATH) / "lightgbm_features.pkl")
 
     missing_features = [f for f in features if f not in X_processed.columns]
 
