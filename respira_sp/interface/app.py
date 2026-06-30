@@ -9,6 +9,8 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
+from utils.assistant import answer
+
 from styling import (inject_css, render_gauge, PALETTE,
                      classify_iqar, pm25_to_iqar, IQAR_BANDS)
 
@@ -130,6 +132,29 @@ last_ts    = pd.to_datetime(data["last_updated_utc"], utc=True)
 iqar_now   = pm25_to_iqar(pm25_atual)
 label_now, color_now = classify_iqar(iqar_now)
 
+# --------------------------------------------------------------------------- #
+# Preparando para o chatbot
+# --------------------------------------------------------------------------- #
+forecast_df = pd.DataFrame(records)
+
+forecast_df["timestamp_utc"] = pd.to_datetime(
+    forecast_df["timestamp_utc"],
+    utc=True,
+)
+
+forecast_df = (
+    forecast_df
+    .rename(columns={"pm25_forecast": "pm25_previsto"})
+    .set_index("timestamp_utc")
+)
+
+reading = {
+    "pm25": pm25_atual,
+    "timestamp": last_ts,
+}
+
+
+
 with st.sidebar:
     st.markdown(
         f"<h2 style='margin:0'>🌫️ AirSP <span style='color:{PALETTE['brand']}'>Intelligence</span></h2>"
@@ -177,22 +202,51 @@ with col_mid:
         st.plotly_chart(pollutant_bars(poll), width="stretch",
                         config={"displayModeBar": False})
 
+# --------------------------------------------------------------------------- #
+#          Atualizando chatbot
+# --------------------------------------------------------------------------- #
 with col_chat:
     with st.container(border=True):
-        st.markdown('<div class="card-title">✨ Assistente Inteligente</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="card-title">✨ Assistente Inteligente</div>',
+            unsafe_allow_html=True,
+        )
+
         if "chat" not in st.session_state:
             st.session_state.chat = [
-                ("bot", f"A qualidade do ar agora está **{label_now}** "
-                        f"(IQAr {iqar_now:.0f}) na estação {STATION}."),
+                (
+                    "bot",
+                    f"A qualidade do ar agora está **{label_now}** "
+                    f"(IQAr {iqar_now:.0f}) na estação {STATION}.",
+                ),
             ]
-        bubbles = "".join(f"<div class='bubble {who}'>{txt}</div>"
-                          for who, txt in st.session_state.chat)
-        st.markdown(f"<div class='chat-wrap'>{bubbles}</div>", unsafe_allow_html=True)
+
+        bubbles = "".join(
+            f"<div class='bubble {who}'>{txt}</div>"
+            for who, txt in st.session_state.chat
+        )
+
+        st.markdown(
+            f"<div class='chat-wrap'>{bubbles}</div>",
+            unsafe_allow_html=True,
+        )
+
         q = st.chat_input("Digite sua pergunta…")
+
         if q:
             st.session_state.chat.append(("user", q))
-            st.session_state.chat.append(("bot", f"PM2.5 atual: {pm25_atual:.1f} µg/m³ — {label_now}."))
+
+            resposta = answer(
+                q=q,
+                reading=reading,
+                iqar=iqar_now,
+                label=label_now,
+                forecast_df=forecast_df,
+            )
+
+            st.session_state.chat.append(("bot", resposta))
             st.rerun()
+
 
 st.markdown("""
 <div class="pipe">
