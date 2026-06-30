@@ -19,6 +19,8 @@ from utils.assistant import answer
 from utils.data import lightgbm_forecast, latest_reading, stations, STATION
 from utils.charts import obs_vs_pred, pollutant_bars, station_map
 
+from utils.air_quality import carregar_previsao
+
 st.set_page_config(page_title="Respira SP · AirSP Intelligence",
                    page_icon="🌫️", layout="wide")
 inject_css()
@@ -48,6 +50,11 @@ with st.sidebar:
 
 # Layout em 3 colunas (esquerda larga, meio, chat)
 col_left, col_mid, col_chat = st.columns([1.05, 1.15, 0.9], gap="medium")
+
+
+# ----------------------------- DADOS PREVISÃO ----------------------------- #
+
+forecast_df = carregar_previsao('data/forecasts/forecast_LGBM_20260623.csv')
 
 # ----------------------------- COLUNA ESQUERDA ----------------------------- #
 with col_left:
@@ -97,14 +104,27 @@ with col_chat:
                 ("bot", f"A qualidade do ar agora está **{label_now}** "
                         f"(IQAr {iqar_now:.0f}) na estação {STATION}."),
             ]
-        bubbles = "".join(f"<div class='bubble {who}'>{txt}</div>"
-                          for who, txt in st.session_state.chat)
+
+        bubbles = "".join(
+            f"<div class='bubble {who}'>{txt}</div>"
+            for who, txt in st.session_state.chat
+        )
         st.markdown(f"<div class='chat-wrap'>{bubbles}</div>", unsafe_allow_html=True)
 
         q = st.chat_input("Digite sua pergunta…")
+
         if q:
             st.session_state.chat.append(("user", q))
-            st.session_state.chat.append(("bot", answer(q, reading, iqar_now, label_now)))
+
+            resposta = answer(
+                q,
+                reading,
+                iqar_now,
+                label_now,
+                forecast_df=forecast_df,  # aqui entra a previsão
+            )
+
+            st.session_state.chat.append(("bot", resposta))
             st.rerun()
 
 # RODAPÉ — pipeline de dados (HTML autocontido: renderiza ok num único markdown)
