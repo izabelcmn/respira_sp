@@ -1,108 +1,152 @@
 import numpy as np
 import pandas as pd
-
+import joblib
+from pathlib import Path
 from colorama import Fore, Style
 
-from sklearn.pipeline import make_pipeline
-from sklearn.compose import ColumnTransformer, make_column_transformer
-from sklearn.preprocessing import OneHotEncoder, FunctionTransformer
 
-from taxifare.ml_logic.encoders import transform_time_features, transform_lonlat_features, compute_geohash
+def preprocess_features(X: pd.DataFrame) ->  pd.DataFrame:
+    """
+    Preprocessor responsible for feature engineering.
 
+    Transforms the cleaned time series dataset into a model-ready feature matrix by
+    creating cyclical time features, lagged PM2.5 features, and organizing
+    meteorological/exogenous variables.
 
-def preprocess_features(X: pd.DataFrame) -> np.ndarray:
-    def create_sklearn_preprocessor() -> ColumnTransformer:
-        """
-        Scikit-learn pipeline that transforms a cleaned dataset of shape (_, 7)
-        into a preprocessed one of fixed shape (_, 65).
+    The transformation assumes that the input data are ordered chronologically.
+    """
 
-        Stateless operation: "fit_transform()" equals "transform()".
-        """
+    TARGET = "MP2.5"
 
-        # PASSENGER PIPE
-        p_min = 1
-        p_max = 8
-        passenger_pipe = FunctionTransformer(lambda p: (p - p_min) / (p_max - p_min))
+    MET_VARS = ["temperature_2m","relative_humidity_2m","wind_speed_10m"]
 
-        # DISTANCE PIPE
-        dist_min = 0
-        dist_max = 100
+    MET_LAGS = [1, 3, 6, 12, 24]
+    PM25_LAGS = [1, 2, 3, 6, 12, 24, 48, 168]
+    ROLLING_WINDOWS = [6, 12, 24, 48]
 
-        distance_pipe = make_pipeline(
-            FunctionTransformer(transform_lonlat_features),
-            FunctionTransformer(lambda dist: (dist - dist_min) / (dist_max - dist_min))
-        )
+    def add_cyclical_time_features(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
 
-        # TIME PIPE
-        timedelta_min = 0
-        timedelta_max = 2090
+        if not isinstance(df.index, pd.DatetimeIndex):
+            raise TypeError("DataFrame index must be a DatetimeIndex.")
 
-        time_categories = [
-            np.arange(0, 7, 1),  # days of the week
-            np.arange(1, 13, 1)  # months of the year
-        ]
+        df["month_sin"] = np.sin(2 * np.pi * df.index.month / 12)
+        df["month_cos"] = np.cos(2 * np.pi * df.index.month / 12)
 
-        time_pipe = make_pipeline(
-            FunctionTransformer(transform_time_features),
-            make_column_transformer(
-                (OneHotEncoder(
-                    categories=time_categories,
-                    sparse_output=False,
-                    handle_unknown="ignore"
-                ), [2,3]), # corresponds to columns ["day of week", "month"], not the other columns
+        df["weekday_sin"] = np.sin(2 * np.pi * df.index.dayofweek / 7)
+        df["weekday_cos"] = np.cos(2 * np.pi * df.index.dayofweek / 7)
 
-                (FunctionTransformer(lambda year: (year - timedelta_min) / (timedelta_max - timedelta_min)), [4]), # min-max scale the columns 4 ["timedelta"]
-                remainder="passthrough" # keep hour_sin and hour_cos
-            )
-        )
+        df["hour_sin"] = np.sin(2 * np.pi * df.index.hour / 24)
+        df["hour_cos"] = np.cos(2 * np.pi * df.index.hour / 24)
 
-        # GEOHASH PIPE
-        lonlat_features = [
-            "pickup_latitude", "pickup_longitude", "dropoff_latitude",
-            "dropoff_longitude"
-        ]
+        return df
 
-        # Below are the 20 most frequent district geohashes of precision 5,
-        # covering about 99% of all dropoff/pickup locations,
-        # according to prior analysis in a separate notebook
-        most_important_geohash_districts = [
-            "dr5ru", "dr5rs", "dr5rv", "dr72h", "dr72j", "dr5re", "dr5rk",
-            "dr5rz", "dr5ry", "dr5rt", "dr5rg", "dr5x1", "dr5x0", "dr72m",
-            "dr5rm", "dr5rx", "dr5x2", "dr5rw", "dr5rh", "dr5x8"
-        ]
+    def add_meteorological_lags(
+        df: pd.DataFrame,
+        met_vars: list[str] = MET_VARS,
+        lags: list[int] = MET_LAGS,
+    ) -> pd.DataFrame:
 
-        geohash_categories = [
-            most_important_geohash_districts,  # pickup district list
-            most_important_geohash_districts  # dropoff district list
-        ]
+        df = df.copy()
 
-        geohash_pipe = make_pipeline(
-            FunctionTransformer(compute_geohash),
-            OneHotEncoder(
-                categories=geohash_categories,
-                handle_unknown="ignore",
-                sparse_output=False
-            )
-        )
+        for var in met_vars:
+            if var in df.columns:
+                for lag in lags:
+                    df[f"{var}_lag{lag}"] = df[var].shift(lag)
 
-        # COMBINED PREPROCESSOR
-        final_preprocessor = ColumnTransformer(
-            [
-                ("passenger_scaler", passenger_pipe, ["passenger_count"]),
-                ("time_preproc", time_pipe, ["pickup_datetime"]),
-                ("dist_preproc", distance_pipe, lonlat_features),
-                ("geohash", geohash_pipe, lonlat_features),
-            ],
-            n_jobs=-1,
-        )
+        return df
 
-        return final_preprocessor
+    def add_pm25_lags(
+        df: pd.DataFrame,
+        target_col: str = TARGET,
+        lags: list[int] = PM25_LAGS,
+    ) -> pd.DataFrame:
+
+        df = df.copy()
+
+        if target_col not in df.columns:
+            raise ValueError(f"Column '{target_col}' not found in DataFrame.")
+
+        for lag in lags:
+            df[f"pm25_lag{lag}"] = df[target_col].shift(lag)
+
+        return df
+
+    def add_seasonal_features(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            raise TypeError("DataFrame index must be a DatetimeIndex.")
+
+        df["is_winter"] = df.index.month.isin([6, 7, 8]).astype(int)
+
+        return df
+
+    def add_rolling_pm25_features(
+        df: pd.DataFrame,
+        target_col: str = TARGET,
+        windows: list[int] = ROLLING_WINDOWS,
+    ) -> pd.DataFrame:
+
+        df = df.copy()
+
+        if target_col not in df.columns:
+            raise ValueError(f"Column '{target_col}' not found in DataFrame.")
+
+        base = df[target_col].shift(1)
+
+        for window in windows:
+            df[f"pm25_mean_{window}h"] = base.rolling(window).mean()
+            df[f"pm25_std_{window}h"] = base.rolling(window).std()
+            df[f"pm25_max_{window}h"] = base.rolling(window).max()
+
+        return df
 
     print(Fore.BLUE + "\nPreprocessing features..." + Style.RESET_ALL)
 
-    preprocessor = create_sklearn_preprocessor()
-    X_processed = preprocessor.fit_transform(X)
+    X_processed = X.copy()
 
-    print("✅ X_processed, with shape", X_processed.shape)
+    if not isinstance(X_processed.index, pd.DatetimeIndex):
+        raise TypeError("X must have a DatetimeIndex.")
+
+    X_processed = X_processed.sort_index()
+
+    X_processed = add_cyclical_time_features(X_processed)
+    X_processed = add_meteorological_lags(X_processed)
+    X_processed = add_pm25_lags(X_processed)
+    X_processed = add_seasonal_features(X_processed)
+    X_processed = add_rolling_pm25_features(X_processed)
+
+    X_processed = X_processed.drop(columns=[TARGET])
+
+    # Validate engineered features
+    from respira_sp.params import LOCAL_REGISTRY_PATH
+    features = joblib.load(Path(LOCAL_REGISTRY_PATH) / "lightgbm_features.pkl")
+
+    missing_features = [f for f in features if f not in X_processed.columns]
+
+    if missing_features:
+        raise ValueError(
+            f"The following required features are missing:\n{missing_features}"
+        )
+
+    print(f"✅ All {len(features)} model features are present.")
+
+    print("✅ X_processed shape:", X_processed.shape)
+
+    # Check feature order
+    if list(X_processed.columns) != list(features):
+
+        for i, (col_model, col_input) in enumerate(zip(features, X_processed.columns)):
+            if col_model != col_input:
+                raise ValueError(
+                    f"Feature order mismatch at position {i}:\n"
+                    f"Expected: '{col_model}'\n"
+                    f"Found:    '{col_input}'"
+                )
+
+        raise ValueError("Feature order does not match the training feature order.")
+
+    print("✅ Feature order matches the training data.")
 
     return X_processed
