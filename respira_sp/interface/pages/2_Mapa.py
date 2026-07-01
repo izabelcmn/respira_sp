@@ -6,10 +6,10 @@ import streamlit as st
 from styling import inject_css, IQAR_BANDS
 from app import stations, station_map
 
-st.set_page_config(page_title="Mapa · Respira SP", page_icon="🗺️", layout="wide")
+st.set_page_config(page_title="Mapa · Respira SP", layout="wide")
 inject_css()
 
-st.markdown("## 🗺️ Mapa da Qualidade do Ar — RMSP")
+st.markdown("## Mapa — Estação Congonhas")
 
 with st.container(border=True):
     st.plotly_chart(station_map(stations()), width="stretch",
@@ -19,5 +19,5 @@ with st.container(border=True):
         for _, lbl, c in IQAR_BANDS)
     st.markdown(legend, unsafe_allow_html=True)
 
-st.markdown('<p class="muted">Marcadores mostram o PM2.5 por estação.</p>',
+st.markdown('<p class="muted">Marcador mostra o PM2.5 da estação Congonhas.</p>',
             unsafe_allow_html=True)

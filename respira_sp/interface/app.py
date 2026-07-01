@@ -49,15 +49,9 @@ def synthetic_forecast() -> dict:
     }
 
 def stations() -> pd.DataFrame:
+    # Apenas a estação de Congonhas — única usada no modelo
     rows = [
-        ("Congonhas",   -23.626, -46.656, 12),
-        ("Pinheiros",   -23.561, -46.702, 14),
-        ("Santana",     -23.503, -46.628, 10),
-        ("Lapa",        -23.522, -46.705, 11),
-        ("Tatuapé",     -23.540, -46.576, 13),
-        ("Moema",       -23.601, -46.663, 16),
-        ("Parelheiros", -23.827, -46.728,  9),
-        ("Guarulhos",   -23.454, -46.533, 13),
+        ("Congonhas", -23.626, -46.656, 12),
     ]
     return pd.DataFrame(rows, columns=["estacao", "lat", "lon", "pm25"])
 
@@ -71,7 +65,7 @@ def station_map(df: pd.DataFrame) -> go.Figure:
         customdata=df["estacao"],
         hovertemplate="<b>%{customdata}</b><br>PM2.5: %{text} µg/m³<extra></extra>"))
     fig.update_layout(
-        map=dict(style="open-street-map", center=dict(lat=-23.59, lon=-46.65), zoom=9.3),
+        map=dict(style="open-street-map", center=dict(lat=-23.626, lon=-46.656), zoom=12),
         margin=dict(l=0, r=0, t=0, b=0), height=320, paper_bgcolor="rgba(0,0,0,0)")
     return fig
 
@@ -94,28 +88,6 @@ def forecast_chart(records: list) -> go.Figure:
                    zeroline=False, title="PM2.5 (µg/m³)"))
     return fig
 
-def pollutant_bars(values: dict) -> go.Figure:
-    names = list(values.keys())[::-1]
-    vals  = [values[n][0] for n in names]
-    units = [values[n][1] for n in names]
-    ceil  = {"PM2.5": 75, "PM10": 150, "O3": 160, "NO2": 200, "CO": 9}
-    colors = []
-    for n, v in zip(names, vals):
-        frac = min(v / ceil.get(n, 100), 1)
-        colors.append("#4CAF50" if frac < .4 else "#FBC02D" if frac < .7 else "#FB8C00")
-    fig = go.Figure(go.Bar(
-        x=vals, y=names, orientation="h", marker=dict(color=colors), width=0.55,
-        text=[f"{v:g} {u}" for v, u in zip(vals, units)], textposition="outside",
-        textfont=dict(color=PALETTE["text"], size=12), hoverinfo="skip"))
-    lay = dict(height=210, margin=dict(l=8, r=8, t=8, b=8),
-               paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-               font=dict(color=PALETTE["muted"], family="Inter", size=12),
-               showlegend=False)
-    fig.update_layout(**lay)
-    fig.update_xaxes(visible=False, range=[0, max(vals) * 1.35])
-    fig.update_yaxes(gridcolor="rgba(0,0,0,0)")
-    return fig
-
 # --------------------------------------------------------------------------- #
 # APP
 # --------------------------------------------------------------------------- #
@@ -136,24 +108,13 @@ label_now, color_now = classify_iqar(iqar_now)
 # Preparando para o chatbot
 # --------------------------------------------------------------------------- #
 forecast_df = pd.DataFrame(records)
-
-forecast_df["timestamp_utc"] = pd.to_datetime(
-    forecast_df["timestamp_utc"],
-    utc=True,
-)
-
+forecast_df["timestamp_utc"] = pd.to_datetime(forecast_df["timestamp_utc"], utc=True)
 forecast_df = (
     forecast_df
     .rename(columns={"pm25_forecast": "pm25_previsto"})
     .set_index("timestamp_utc")
 )
-
-reading = {
-    "pm25": pm25_atual,
-    "timestamp": last_ts,
-}
-
-
+reading = {"pm25": pm25_atual, "timestamp": last_ts}
 
 with st.sidebar:
     st.markdown(
@@ -178,7 +139,7 @@ with col_left:
             f'{last_ts:%d/%m/%Y %H:%M} UTC</p>', unsafe_allow_html=True)
 
     with st.container(border=True):
-        st.markdown('<div class="card-title">Mapa da Qualidade do Ar (RMSP)</div>',
+        st.markdown('<div class="card-title">Mapa — Estação Congonhas</div>',
                     unsafe_allow_html=True)
         st.plotly_chart(station_map(stations()), width="stretch",
                         config={"displayModeBar": False}, key="mapa_rmsp_home")
@@ -194,59 +155,49 @@ with col_mid:
             for _, lbl, c in IQAR_BANDS[:4])
         st.markdown(legend, unsafe_allow_html=True)
 
+    # ── Covariáveis meteorológicas (features do modelo) ────────────────────
     with st.container(border=True):
-        st.markdown('<div class="card-title">Principais Poluentes (Atual)</div>',
+        st.markdown('<div class="card-title">Condições Meteorológicas — Congonhas</div>',
                     unsafe_allow_html=True)
-        poll = {"PM2.5": (round(pm25_atual), "µg/m³"), "PM10": (88, "µg/m³"),
-                "O3": (28, "µg/m³"), "NO2": (18, "µg/m³"), "CO": (0.6, "ppm")}
-        st.plotly_chart(pollutant_bars(poll), width="stretch",
-                        config={"displayModeBar": False})
+        st.markdown(
+            '<p class="muted">Covariáveis usadas pelo LightGBM na previsão.</p>',
+            unsafe_allow_html=True)
+        m1, m2 = st.columns(2)
+        m1.metric("Temperatura", "22.4 °C")
+        m2.metric("Umidade Relativa", "68 %")
+        m3, m4 = st.columns(2)
+        m3.metric("Vel. do Vento", "3.2 m/s")
+        m4.metric("Precipitação", "0.0 mm")
 
 # --------------------------------------------------------------------------- #
-#          Atualizando chatbot
+#          Chatbot
 # --------------------------------------------------------------------------- #
 with col_chat:
     with st.container(border=True):
         st.markdown(
             '<div class="card-title">✨ Assistente Inteligente</div>',
-            unsafe_allow_html=True,
-        )
+            unsafe_allow_html=True)
 
         if "chat" not in st.session_state:
             st.session_state.chat = [
-                (
-                    "bot",
-                    f"A qualidade do ar agora está **{label_now}** "
-                    f"(IQAr {iqar_now:.0f}) na estação {STATION}.",
-                ),
+                ("bot",
+                 f"A qualidade do ar agora está **{label_now}** "
+                 f"(IQAr {iqar_now:.0f}) na estação {STATION}."),
             ]
 
         bubbles = "".join(
             f"<div class='bubble {who}'>{txt}</div>"
-            for who, txt in st.session_state.chat
-        )
-
-        st.markdown(
-            f"<div class='chat-wrap'>{bubbles}</div>",
-            unsafe_allow_html=True,
-        )
+            for who, txt in st.session_state.chat)
+        st.markdown(f"<div class='chat-wrap'>{bubbles}</div>", unsafe_allow_html=True)
 
         q = st.chat_input("Digite sua pergunta…")
-
         if q:
             st.session_state.chat.append(("user", q))
-
             resposta = answer(
-                q=q,
-                reading=reading,
-                iqar=iqar_now,
-                label=label_now,
-                forecast_df=forecast_df,
-            )
-
+                q=q, reading=reading, iqar=iqar_now,
+                label=label_now, forecast_df=forecast_df)
             st.session_state.chat.append(("bot", resposta))
             st.rerun()
-
 
 st.markdown("""
 <div class="pipe">
