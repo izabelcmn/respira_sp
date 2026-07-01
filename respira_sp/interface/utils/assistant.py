@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from google import genai
 
 from utils.air_quality import (
     carregar_previsao,
@@ -187,6 +188,13 @@ Resposta:
 
         return _rule_based(q, reading, iqar, label, forecast_df=forecast)
 
-    except Exception as e:
-        st.warning(f"LLM indisponível. Usando resposta técnica. Erro: {e}")
+    except Exception:
+        import traceback
+
+        erro = traceback.format_exc()
+        print(erro, flush=True)
+
+        st.error("Erro completo da LLM:")
+        st.code(erro)
+
         return _rule_based(q, reading, iqar, label, forecast_df=forecast)
