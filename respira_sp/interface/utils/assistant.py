@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-from google import genai
 
 from utils.air_quality import (
     carregar_previsao,
@@ -20,6 +19,13 @@ from utils.air_quality import (
     contexto_cetesb,
     contexto_poluente,
     montar_contexto_previsao,
+)
+
+from respira_sp.params import (
+    GOOGLE_CLOUD_PROJECT,
+    GOOGLE_CLOUD_LOCATION,
+    GOOGLE_GENAI_USE_VERTEXAI,
+    GEMINI_MODEL,
 )
 
 
@@ -157,10 +163,10 @@ def answer(
 
     try:
         client = genai.Client(
-            vertexai=True,
-            project=os.getenv("GOOGLE_CLOUD_PROJECT"),
-            location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
-        )
+    vertexai=GOOGLE_GENAI_USE_VERTEXAI,
+    project=GOOGLE_CLOUD_PROJECT,
+    location=GOOGLE_CLOUD_LOCATION,
+    )
 
         prompt = f"""
 {_build_context(reading, iqar, label, forecast_df=forecast)}
@@ -172,9 +178,9 @@ Resposta:
 """
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-        )
+    model=GEMINI_MODEL,
+    contents=prompt,
+)
 
         if response.text:
             return response.text.strip()
