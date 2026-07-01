@@ -7,6 +7,8 @@ services:
     volumes:
       - ./data:/app/data
       - ./models:/app/models
+    env_file:
+      - .env
     environment:
       - MODEL_TARGET=local
       - RESPIRA_API_URL=http://localhost:8000

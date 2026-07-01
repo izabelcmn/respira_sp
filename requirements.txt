@@ -34,3 +34,6 @@ google-genai
 # Dev / Testing
 pytest==9.1.0
 ipdb==0.13.13
+
+#env
+python-dotenv
