@@ -17,3 +17,4 @@ raw_data/
 # Python
 __pycache__/
 *.pyc
+gcp-key.json
