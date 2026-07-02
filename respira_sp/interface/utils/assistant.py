@@ -22,6 +22,13 @@ from utils.air_quality import (
     montar_contexto_previsao,
 )
 
+from respira_sp.params import (
+    GOOGLE_CLOUD_PROJECT,
+    GOOGLE_CLOUD_LOCATION,
+    GOOGLE_GENAI_USE_VERTEXAI,
+    GEMINI_MODEL,
+)
+
 
 def _resolve_forecast(
     forecast_df: pd.DataFrame | None = None,
@@ -157,10 +164,10 @@ def answer(
 
     try:
         client = genai.Client(
-            vertexai=True,
-            project=os.getenv("GOOGLE_CLOUD_PROJECT"),
-            location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
-        )
+    vertexai=GOOGLE_GENAI_USE_VERTEXAI,
+    project=GOOGLE_CLOUD_PROJECT,
+    location=GOOGLE_CLOUD_LOCATION,
+    )
 
         prompt = f"""
 {_build_context(reading, iqar, label, forecast_df=forecast)}
@@ -172,15 +179,22 @@ Resposta:
 """
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-        )
+    model=GEMINI_MODEL,
+    contents=prompt,
+)
 
         if response.text:
             return response.text.strip()
 
         return _rule_based(q, reading, iqar, label, forecast_df=forecast)
 
-    except Exception as e:
-        st.warning(f"LLM indisponível. Usando resposta técnica. Erro: {e}")
+    except Exception:
+        import traceback
+
+        erro = traceback.format_exc()
+        print(erro, flush=True)
+
+        st.error("Erro completo da LLM:")
+        st.code(erro)
+
         return _rule_based(q, reading, iqar, label, forecast_df=forecast)

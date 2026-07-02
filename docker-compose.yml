@@ -7,7 +7,11 @@ services:
     volumes:
       - ./data:/app/data
       - ./models:/app/models
+      - ${GOOGLE_APPLICATION_CREDENTIALS_HOST}:/app/gcp-key.json:ro
+    env_file:
+      - .env
     environment:
       - MODEL_TARGET=local
       - RESPIRA_API_URL=http://localhost:8000
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
     restart: unless-stopped
