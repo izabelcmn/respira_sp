@@ -21,11 +21,14 @@ def clean_data(df_openaq: pd.DataFrame, df_openmeteo: pd.DataFrame) -> pd.DataFr
     # ── OpenAQ ──────────────────────────────────────────────────────────
     aq = df_openaq.copy()
 
-    # Filtrar só pm25 e extrair timestamp UTC
-    aq = aq[aq["parameter"] == "pm25"][["datetimeUtc", "value"]].copy()
-    aq = aq.rename(columns={"datetimeUtc": "time", "value": "PM2.5"})
+    # Novo formato OpenAQ já vem pivotado
     aq["time"] = pd.to_datetime(aq["time"], utc=True).dt.floor("h")
-    aq["PM2.5"] = pd.to_numeric(aq["PM2.5"], errors="coerce").astype("float32")
+
+    # Usa pm25 como alvo
+    aq["PM2.5"] = pd.to_numeric(aq["pm25"], errors="coerce").astype("float32")
+
+    # Mantém só tempo e PM2.5
+    aq = aq[["time", "PM2.5"]].copy()
 
     # Remover duplicatas — média se houver mais de uma leitura por hora
     aq = aq.groupby("time", as_index=False)["PM2.5"].mean()
