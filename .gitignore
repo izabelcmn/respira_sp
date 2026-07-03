@@ -17,4 +17,6 @@ raw_data/
 # Python
 __pycache__/
 *.pyc
-gcp-key.json
+
+# Google Cloud credentials
+*.json

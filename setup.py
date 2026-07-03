@@ -3,18 +3,17 @@ from setuptools import setup
 
 with open("requirements.txt") as f:
     content = f.readlines()
-requirements = [x.strip() for x in content if "git+" not in x]
+requirements = [x.strip() for x in content if "git+" not in x and not x.strip().startswith("#") and x.strip()]
 
-setup(name='taxifare',
-      version="0.0.12",
-      description="TaxiFare Model (api_pred)",
-      license="MIT",
-      author="Le Wagon",
-      author_email="contact@lewagon.org",
-      #url="https://github.com/lewagon/taxi-fare",
-      install_requires=requirements,
-      packages=find_packages(),
-      test_suite="tests",
-      # include_package_data: to install data from MANIFEST.in
-      include_package_data=True,
-      zip_safe=False)
+setup(
+    name="respira_sp",
+    version="1.0.0",
+    description="Respira SP — PM2.5 forecasting for São Paulo using LightGBM",
+    license="MIT",
+    author="MA4RKZ",
+    install_requires=requirements,
+    packages=find_packages(),
+    test_suite="tests",
+    include_package_data=True,
+    zip_safe=False
+)
