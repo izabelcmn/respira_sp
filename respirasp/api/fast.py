@@ -7,9 +7,9 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from respira_sp.ml_logic.data import clean_data, fetch_operational_data
-from respira_sp.ml_logic.preprocessor import preprocess_features
-from respira_sp.params import LOCAL_DATA_PATH, LOCAL_REGISTRY_PATH
+from respirasp.ml_logic.data import clean_data, fetch_operational_data
+from respirasp.ml_logic.preprocessor import preprocess_features
+from respirasp.params import LOCAL_DATA_PATH, LOCAL_REGISTRY_PATH
 
 app = FastAPI()
 

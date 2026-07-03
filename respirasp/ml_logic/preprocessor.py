@@ -120,7 +120,7 @@ def preprocess_features(X: pd.DataFrame) ->  pd.DataFrame:
     X_processed = X_processed.drop(columns=[TARGET])
 
     # Validate engineered features
-    from respira_sp.params import LOCAL_REGISTRY_PATH
+    from respirasp.params import LOCAL_REGISTRY_PATH
     features = joblib.load(Path(LOCAL_REGISTRY_PATH) / "lightgbm_features.pkl")
 
     missing_features = [f for f in features if f not in X_processed.columns]

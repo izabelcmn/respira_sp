@@ -39,4 +39,4 @@ with col2:
 - **Previsão direta** de 24h evita acúmulo de erro autorregressivo
 """)
 
-st.caption("Respira SP · interface: respira_sp/interface/")
+st.caption("Respira SP · interface: respirasp/interface/")

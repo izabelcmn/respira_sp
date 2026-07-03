@@ -1,5 +1,6 @@
 services:
-  respira_sp:
+  respirasp:
+    x-google-name: respirasp
     build: .
     ports:
       - "8000:8000"
@@ -7,11 +8,11 @@ services:
     volumes:
       - ./data:/app/data
       - ./models:/app/models
-      - ${GOOGLE_APPLICATION_CREDENTIALS_HOST}:/app/gcp-key.json:ro
+      - /home/markz/code/MA4RKZ/respirasp/project-5c1951c5-1a36-42b3-a73-f9f203c63fc7.json:/app/gcp-key.json
     env_file:
       - .env
     environment:
       - MODEL_TARGET=local
-      - RESPIRA_API_URL=http://localhost:8000
+      - RESPIRA_API_URL=http://localhost:8501
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
     restart: unless-stopped

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from respira_sp.params import DTYPES_RAW, COLUMN_NAMES_RAW, LOCAL_DATA_PATH
+from respirasp.params import DTYPES_RAW, COLUMN_NAMES_RAW, LOCAL_DATA_PATH
 
 
 def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:

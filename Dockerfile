@@ -13,20 +13,20 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy and install package
 COPY setup.py .
-COPY respira_sp/ respira_sp/
+COPY respirasp/ respirasp/
 RUN pip install --no-cache-dir -e .
 
 # Environment variables
 ENV MODEL_TARGET=local
-ENV RESPIRA_API_URL=http://localhost:8000
+ENV RESPIRA_API_URL=http://localhost:8501
 
 # Expose ports
 EXPOSE 8000 8501
 
 # Start both API and Streamlit in the same container
-CMD uvicorn respira_sp.api.fast:app --host 0.0.0.0 --port 8000 & \
+CMD uvicorn respirasp.api.fast:app --host 0.0.0.0 --port 8501 & \
     sleep 3 && \
-    streamlit run respira_sp/interface/app.py \
-        --server.port 8501 \
+    streamlit run respirasp/interface/app.py \
+        --server.port 8000 \
         --server.address 0.0.0.0 \
         --server.headless true
