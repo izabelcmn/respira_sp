@@ -24,7 +24,7 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
                        precipitation, wind_speed_10m (UTC)
     """
 
-    # ── Date range: calculated in SP, converted to UTC for APIs ───────
+    #  Date range: calculated in SP, converted to UTC for APIs ─
     SP_TZ     = ZoneInfo("America/Sao_Paulo")
     today_sp  = datetime.now(SP_TZ)
     date_to   = today_sp - timedelta(days=1)    # yesterday in SP
@@ -53,7 +53,7 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
           f"{date_from.strftime('%Y-%m-%d')} → {date_to.strftime('%Y-%m-%d')} "
           f"(UTC: {date_from_str} → {date_to_str})")
 
-    # ── 1. OpenAQ ─────────────────────────────────────────────────────
+    #  1. OpenAQ
     BASE_URL    = "https://api.openaq.org/v3"
     location_id = 6139516
     headers     = {"X-API-Key": api_key}
@@ -121,7 +121,7 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     df_openaq.to_csv(openaq_path, index=False, encoding="utf-8")
     print(f"✅ OpenAQ saved: {openaq_path.name} ({len(df_openaq)} rows)")
 
-    # ── 2. OpenMeteo ──────────────────────────────────────────────────
+    #  2. OpenMeteo
     cache_session    = requests_cache.CachedSession(".cache", expire_after=-1)
     retry_session    = retry(cache_session, retries=5, backoff_factor=0.2)
     openmeteo_client = openmeteo_requests.Client(session=retry_session)
@@ -184,7 +184,7 @@ def clean_data(df_openaq: pd.DataFrame, df_openmeteo: pd.DataFrame) -> pd.DataFr
     All timestamps must be UTC.
     """
 
-    # ── OpenAQ ────────────────────────────────────────────────────────
+    #  OpenAQ
     aq = df_openaq.copy()
 
     aq["time"]  = pd.to_datetime(aq["time"], utc=True).dt.floor("h")
@@ -192,7 +192,7 @@ def clean_data(df_openaq: pd.DataFrame, df_openmeteo: pd.DataFrame) -> pd.DataFr
     aq = aq[["time", "PM2.5"]].copy()
     aq = aq.groupby("time", as_index=False)["PM2.5"].mean()
 
-    # ── OpenMeteo ─────────────────────────────────────────────────────
+    #  OpenMeteo
     met = df_openmeteo.copy()
 
     met["time"] = pd.to_datetime(met["time"], utc=True).dt.floor("h")
@@ -201,12 +201,12 @@ def clean_data(df_openaq: pd.DataFrame, df_openmeteo: pd.DataFrame) -> pd.DataFr
         met[col] = met[col].astype("float32")
     met = met.drop_duplicates(subset=["time"], keep="first")
 
-    # ── Merge ─────────────────────────────────────────────────────────
+    #  Merge
     df = met.merge(aq, on="time", how="left")
     df["time"] = pd.to_datetime(df["time"], utc=True)
     df = df.astype({k: v for k, v in DTYPES_RAW.items() if k != "time"})
 
-    # ── Data Quality ──────────────────────────────────────────────────
+    #  Data Quality
     df = df.dropna(subset=["temperature_2m", "relative_humidity_2m",
                             "precipitation", "wind_speed_10m"])
     df = df[COLUMN_NAMES_RAW]

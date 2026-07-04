@@ -96,7 +96,7 @@ iqar_now = pm25_to_iqar(pm25_atual)
 label_now, color_now = classify_iqar(iqar_now)
 
 
-# Preparando para o chatbot
+# prepare chatbot
 
 forecast_df = pd.DataFrame(records)
 forecast_df["timestamp_utc"] = pd.to_datetime(forecast_df["timestamp_utc"], utc=True)
@@ -150,7 +150,7 @@ with col_mid:
             for _, lbl, c in IQAR_BANDS[:4])
         st.markdown(legend, unsafe_allow_html=True)
 
-    # ── Covariáveis meteorológicas (features do modelo) ────────────────────
+    # Meteorological covariates (model features)
     with st.container(border=True):
         st.markdown('<div class="card-title">Condições Meteorológicas — Congonhas</div>',
                     unsafe_allow_html=True)
