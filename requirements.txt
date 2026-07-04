@@ -28,6 +28,9 @@ openmeteo_sdk==1.27.2
 requests-cache==1.3.2
 retry-requests==2.0.0
 
+# Cloud Storage
+google-cloud-storage
+
 # AI — Vertex AI assistant
 google-genai
 

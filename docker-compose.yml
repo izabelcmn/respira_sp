@@ -1,17 +1,30 @@
 services:
-  respira_sp:
-    build: .
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
     ports:
-      - "8000:8000"
-      - "8501:8501"
+      - "8501:8080"
     volumes:
       - ./data:/app/data
       - ./models:/app/models
-      - ${GOOGLE_APPLICATION_CREDENTIALS_HOST}:/app/gcp-key.json:ro
     env_file:
       - .env
     environment:
       - MODEL_TARGET=local
-      - RESPIRA_API_URL=http://localhost:8000
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    ports:
+      - "8000:8080"
+    env_file:
+      - .env
+    environment:
+      - MODEL_TARGET=local
+      - RESPIRA_API_URL=http://api:8080
+    depends_on:
+      - api
     restart: unless-stopped
