@@ -32,6 +32,14 @@ GOOGLE_GENAI_USE_VERTEXAI = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "True").
     "yes",
 ]
 
+GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME")
+GCS_OPERATIONAL_PREFIX = os.environ.get("GCS_OPERATIONAL_PREFIX", "operational")
+USE_GCS_STORAGE = os.environ.get("USE_GCS_STORAGE", "False").lower() in [
+    "true",
+    "1",
+    "yes",
+]
+
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 

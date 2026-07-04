@@ -10,20 +10,21 @@ import streamlit as st
 import plotly.graph_objects as go
 
 from utils.assistant import answer
+from utils.map import stations, station_map
 
 from styling import (inject_css, render_gauge, PALETTE,
                      classify_iqar, pm25_to_iqar, IQAR_BANDS)
 
-# --------------------------------------------------------------------------- #
+
 # API
-# --------------------------------------------------------------------------- #
-API_URL = os.getenv("RESPIRA_API_URL", "http://localhost:8000")
+
+API_URL = os.getenv("RESPIRA_API_URL", "http://localhost:8501")
 STATION = "Congonhas"
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_forecast() -> dict | None:
     try:
-        resp = requests.get(f"{API_URL}/forecast", timeout=10)
+        resp = requests.get(f"{API_URL}/forecast", timeout=60)
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
@@ -48,65 +49,55 @@ def synthetic_forecast() -> dict:
         "pm25_min_24h": round(float(yhat.min()), 2),
     }
 
-def stations() -> pd.DataFrame:
-    # Apenas a estação de Congonhas — única usada no modelo
-    rows = [
-        ("Congonhas", -23.626, -46.656, 12),
-    ]
-    return pd.DataFrame(rows, columns=["estacao", "lat", "lon", "pm25"])
-
-def station_map(df: pd.DataFrame) -> go.Figure:
-    colors = [classify_iqar(pm25_to_iqar(v))[1] for v in df["pm25"]]
-    fig = go.Figure(go.Scattermap(
-        lat=df["lat"], lon=df["lon"], mode="markers+text",
-        marker=dict(size=24, color=colors, opacity=0.92),
-        text=df["pm25"].astype(int).astype(str),
-        textfont=dict(color="#0B1220", size=11, family="Inter"),
-        customdata=df["estacao"],
-        hovertemplate="<b>%{customdata}</b><br>PM2.5: %{text} µg/m³<extra></extra>"))
-    fig.update_layout(
-        map=dict(style="open-street-map", center=dict(lat=-23.626, lon=-46.656), zoom=12),
-        margin=dict(l=0, r=0, t=0, b=0), height=320, paper_bgcolor="rgba(0,0,0,0)")
-    return fig
-
 def forecast_chart(records: list) -> go.Figure:
-    timestamps = [r["timestamp_utc"]  for r in records]
-    values     = [r["pm25_forecast"]  for r in records]
+    timestamps = [r.get("timestamp_sp", r["timestamp_utc"]) for r in records]
+    values     = [r["pm25_forecast"] for r in records]
     colors     = [classify_iqar(pm25_to_iqar(v))[1] for v in values]
+
     fig = go.Figure(go.Scatter(
         x=timestamps, y=values, mode="lines+markers",
         line=dict(color="#34D399", width=2.5, shape="spline"),
         marker=dict(size=9, color=colors, line=dict(width=2, color=PALETTE["panel"])),
-        hovertemplate="%{x|%d/%m %H:%M}<br><b>%{y:.1f}</b> µg/m³<extra></extra>"))
+        hovertemplate="%{x|%d/%m %H:%M}<br><b>%{y:.1f}</b> µg/m³<extra></extra>"
+    ))
+
     fig.update_layout(
         height=260, margin=dict(l=8, r=8, t=8, b=8),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color=PALETTE["muted"], family="Inter", size=12),
         showlegend=False,
         xaxis=dict(showgrid=False, zeroline=False),
-        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,.06)",
-                   zeroline=False, title="PM2.5 (µg/m³)"))
+        yaxis=dict(
+            showgrid=True,
+            gridcolor="rgba(255,255,255,.06)",
+            zeroline=False,
+            title="PM2.5 (µg/m³)"
+        )
+    )
     return fig
 
-# --------------------------------------------------------------------------- #
+
 # APP
-# --------------------------------------------------------------------------- #
 st.set_page_config(page_title="Respira SP · AirSP Intelligence",
                    page_icon="🌫️", layout="wide")
 inject_css()
 
-data    = fetch_forecast() or synthetic_forecast()
-is_live = fetch_forecast() is not None
+api_data = fetch_forecast()
+data = api_data or synthetic_forecast()
+is_live = api_data is not None
 
-records    = data["forecast_24h"]
+records = data["forecast_24h"]
 pm25_atual = data["pm25_current"] or records[0]["pm25_forecast"]
-last_ts    = pd.to_datetime(data["last_updated_utc"], utc=True)
-iqar_now   = pm25_to_iqar(pm25_atual)
+last_ts = pd.to_datetime(
+    data.get("last_updated_sp", data["last_updated_utc"]),
+    utc=True
+).tz_convert("America/Sao_Paulo")
+iqar_now = pm25_to_iqar(pm25_atual)
 label_now, color_now = classify_iqar(iqar_now)
 
-# --------------------------------------------------------------------------- #
+
 # Preparando para o chatbot
-# --------------------------------------------------------------------------- #
+
 forecast_df = pd.DataFrame(records)
 forecast_df["timestamp_utc"] = pd.to_datetime(forecast_df["timestamp_utc"], utc=True)
 forecast_df = (
@@ -136,13 +127,17 @@ with col_left:
         st.markdown(render_gauge(iqar_now), unsafe_allow_html=True)
         st.markdown(
             f'<p class="muted" style="margin-top:10px">Última leitura: '
-            f'{last_ts:%d/%m/%Y %H:%M} UTC</p>', unsafe_allow_html=True)
+            f'{last_ts:%d/%m/%Y %H:%M} São Paulo</p>', unsafe_allow_html=True)
 
     with st.container(border=True):
         st.markdown('<div class="card-title">Mapa — Estação Congonhas</div>',
                     unsafe_allow_html=True)
-        st.plotly_chart(station_map(stations()), width="stretch",
-                        config={"displayModeBar": False}, key="mapa_rmsp_home")
+        st.plotly_chart(
+    station_map(stations()),
+    width="stretch",
+    config={"displayModeBar": False},
+    key="mapa_rmsp_home"
+)
 
 with col_mid:
     with st.container(border=True):
@@ -169,9 +164,9 @@ with col_mid:
         m3.metric("Vel. do Vento", "3.2 m/s")
         m4.metric("Precipitação", "0.0 mm")
 
-# --------------------------------------------------------------------------- #
+
 #          Chatbot
-# --------------------------------------------------------------------------- #
+
 with col_chat:
     with st.container(border=True):
         st.markdown(

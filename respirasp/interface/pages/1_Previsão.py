@@ -9,7 +9,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from styling import inject_css, kpi_card, classify_iqar, pm25_to_iqar, PALETTE
 
-API_URL  = os.getenv("RESPIRA_API_URL", "http://localhost:8000")
+API_URL = os.getenv("RESPIRA_API_URL", "http://localhost:8501")
 STATION  = "Congonhas"
 
 # ── Splits do dataset ─────────────────────────────────────────────────────────
@@ -34,17 +34,17 @@ BACKTEST = [
 BEST = BACKTEST[0]
 
 # ── Fetch forecast ────────────────────────────────────────────────────────────
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_forecast() -> dict | None:
     try:
-        resp = requests.get(f"{API_URL}/forecast", timeout=10)
+        resp = requests.get(f"{API_URL}/forecast", timeout=60)
         resp.raise_for_status()
         return resp.json()
     except Exception:
         return None
 
 def forecast_chart(records: list) -> go.Figure:
-    timestamps = [r["timestamp_utc"] for r in records]
+    timestamps = [r.get("timestamp_sp", r["timestamp_utc"]) for r in records]
     values     = [r["pm25_forecast"] for r in records]
     fig = go.Figure(go.Scatter(
         x=timestamps, y=values, mode="lines+markers",
@@ -159,5 +159,5 @@ with st.container(border=True):
             f'— categoria <span style="color:{color}">{cat}</span></p>',
             unsafe_allow_html=True)
     else:
-        st.warning("Inicie a API com `uvicorn respirasp.api.fast:app --port 8000` "
-                   "para ver a previsão ao vivo.")
+        st.warning("Inicie a API com `uvicorn respirasp.api.fast:app --port 8501` "
+           "para ver a previsão ao vivo.")

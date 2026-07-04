@@ -1,15 +1,28 @@
 import os
-import pandas as pd
-import joblib
-import numpy as np
+import time
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from fastapi import FastAPI
+
+import joblib
+import numpy as np
+import pandas as pd
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from respirasp.ml_logic.data import clean_data, fetch_operational_data
 from respirasp.ml_logic.preprocessor import preprocess_features
-from respirasp.params import LOCAL_DATA_PATH, LOCAL_REGISTRY_PATH
+from respirasp.ml_logic.gcs_storage import (
+    upload_file_to_gcs,
+    download_latest_matching_file_from_gcs,
+)
+from respirasp.params import (
+    LOCAL_DATA_PATH,
+    LOCAL_REGISTRY_PATH,
+    GCS_BUCKET_NAME,
+    GCS_OPERATIONAL_PREFIX,
+    USE_GCS_STORAGE,
+)
+
 
 app = FastAPI()
 
@@ -23,7 +36,11 @@ app.add_middleware(
 
 SP_TZ = ZoneInfo("America/Sao_Paulo")
 
-# Load trained LightGBM model once at startup
+# Simple in-memory cache to avoid recomputing the forecast on every request
+app.state.forecast_cache = None
+app.state.forecast_cache_time = 0
+
+# Load the trained LightGBM model once at startup
 app.state.model = joblib.load(
     Path(LOCAL_REGISTRY_PATH) / "lightgbm_pm25.pkl"
 )
@@ -38,98 +55,216 @@ def root():
 def update():
     """
     Fetches fresh operational data from OpenAQ and OpenMeteo APIs.
-    Saves new CSVs to data/operational/.
-    Called daily by Cloud Scheduler at 00:05 America/Sao_Paulo (03:05 UTC).
+
+    In local mode, CSV files are saved to data/operational/.
+    In GCS mode, the latest generated CSV files are uploaded to Cloud Storage.
+
+    Called daily by Cloud Scheduler at 00:00 America/Sao_Paulo (03:00 UTC).
     """
     api_key = os.getenv("OPENAQ_API_KEY")
 
     if not api_key:
-        return {"error": "OPENAQ_API_KEY not set in environment."}
+        raise HTTPException(
+            status_code=500,
+            detail="OPENAQ_API_KEY not set in environment.",
+        )
 
     try:
+        # Fetch and save operational data locally first
         df_openaq, df_openmeteo = fetch_operational_data(api_key)
+
+        operational_path = Path(LOCAL_DATA_PATH) / "operational"
+
+        # Upload the latest generated CSV files to Cloud Storage when enabled
+        if USE_GCS_STORAGE:
+            if not GCS_BUCKET_NAME:
+                raise HTTPException(
+                    status_code=500,
+                    detail="GCS_BUCKET_NAME not set in environment.",
+                )
+
+            openaq_files = sorted(operational_path.glob("openaq_location_*.csv"))
+            openmeteo_files = sorted(operational_path.glob("openmeteo_operacional_*.csv"))
+
+            if not openaq_files:
+                raise HTTPException(
+                    status_code=500,
+                    detail="No OpenAQ CSV found after update.",
+                )
+
+            if not openmeteo_files:
+                raise HTTPException(
+                    status_code=500,
+                    detail="No OpenMeteo CSV found after update.",
+                )
+
+            latest_openaq = openaq_files[-1]
+            latest_openmeteo = openmeteo_files[-1]
+
+            upload_file_to_gcs(
+                local_path=latest_openaq,
+                bucket_name=GCS_BUCKET_NAME,
+                destination_blob_name=f"{GCS_OPERATIONAL_PREFIX}/{latest_openaq.name}",
+            )
+
+            upload_file_to_gcs(
+                local_path=latest_openmeteo,
+                bucket_name=GCS_BUCKET_NAME,
+                destination_blob_name=f"{GCS_OPERATIONAL_PREFIX}/{latest_openmeteo.name}",
+            )
+
+        # Clear forecast cache after new data is collected
+        app.state.forecast_cache = None
+        app.state.forecast_cache_time = 0
+
         return {
-            "status":         "ok",
-            "rows_openaq":    len(df_openaq),
+            "status": "ok",
+            "storage": "gcs" if USE_GCS_STORAGE else "local",
+            "rows_openaq": len(df_openaq),
             "rows_openmeteo": len(df_openmeteo),
         }
+
+    except HTTPException:
+        raise
+
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/forecast")
 def forecast():
     """
-    Returns PM2.5 forecast for the next 24 hours.
-    Uses the last 30 days of operational data as historical context
-    to compute lag and rolling features — exactly as done in the
-    training notebook (prever_24h).
+    Returns the PM2.5 forecast for the next 24 hours.
 
-    All timestamps are UTC internally.
-    Each forecast item includes both UTC and America/Sao_Paulo timestamps.
+    In local mode, the API reads the latest CSV files from data/operational/.
+    In GCS mode, the API downloads the latest CSV files from Cloud Storage
+    to /tmp and then generates the forecast from them.
     """
+    now = time.time()
 
-    # Load latest operational data — always picks the most recent file
-    data_path = Path(LOCAL_DATA_PATH) / "operational"
+    # Use cached forecast for 5 minutes
+    if app.state.forecast_cache and now - app.state.forecast_cache_time < 300:
+        return app.state.forecast_cache
 
-    openaq_files = sorted(data_path.glob("openaq_location_*.csv"))
-    if not openaq_files:
-        return {"error": "No OpenAQ data file found in operational folder."}
-    df_openaq = pd.read_csv(openaq_files[-1])
+    try:
+        # Resolve data source: Cloud Storage or local filesystem
+        if USE_GCS_STORAGE:
+            if not GCS_BUCKET_NAME:
+                raise HTTPException(
+                    status_code=500,
+                    detail="GCS_BUCKET_NAME not set in environment.",
+                )
 
-    openmeteo_files = sorted(data_path.glob("openmeteo_operacional_*.csv"))
-    if not openmeteo_files:
-        return {"error": "No OpenMeteo data file found in operational folder."}
-    df_openmeteo = pd.read_csv(openmeteo_files[-1])
+            runtime_data_path = Path("/tmp") / "respirasp" / "operational"
 
-    # Clean and merge OpenAQ + OpenMeteo
-    df_clean = clean_data(df_openaq, df_openmeteo)
+            openaq_file = download_latest_matching_file_from_gcs(
+                bucket_name=GCS_BUCKET_NAME,
+                prefix=GCS_OPERATIONAL_PREFIX,
+                filename_prefix="openaq_location_",
+                destination_dir=runtime_data_path,
+            )
 
-    # Prepare datetime index for the preprocessor
-    df_clean = df_clean.rename(columns={"PM2.5": "MP2.5"})
-    df_clean = df_clean.set_index("time")
-    df_clean.index = pd.to_datetime(df_clean.index, utc=True)
+            openmeteo_file = download_latest_matching_file_from_gcs(
+                bucket_name=GCS_BUCKET_NAME,
+                prefix=GCS_OPERATIONAL_PREFIX,
+                filename_prefix="openmeteo_operacional_",
+                destination_dir=runtime_data_path,
+            )
 
-    # Feature engineering — mirrors the training notebook
-    X_processed = preprocess_features(df_clean)
+        else:
+            data_path = Path(LOCAL_DATA_PATH) / "operational"
 
-    # Drop rows with NaN — initial lag rows lack sufficient historical context
-    X_processed = X_processed.dropna()
+            openaq_files = sorted(data_path.glob("openaq_location_*.csv"))
+            if not openaq_files:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No OpenAQ data file found in operational folder.",
+                )
 
-    if X_processed.empty:
-        return {"error": "Insufficient data to generate forecast."}
+            openmeteo_files = sorted(data_path.glob("openmeteo_operacional_*.csv"))
+            if not openmeteo_files:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No OpenMeteo data file found in operational folder.",
+                )
 
-    # Forecast next 24h — mirrors prever_24h from the notebook
-    # Take the last 24 rows with complete features.
-    # Each row represents one hour; the model predicts PM2.5 +24h ahead.
-    X_future = X_processed.iloc[-24:]
-    y_pred   = app.state.model.predict(X_future)
-    y_pred   = np.clip(y_pred, 0, None)  # PM2.5 cannot be negative
+            openaq_file = openaq_files[-1]
+            openmeteo_file = openmeteo_files[-1]
 
-    # Build response payload for the frontend
-    # Each item includes UTC and SP timestamps — frontend uses timestamp_sp
-    forecast_series = [
-        {
-            "timestamp_utc": str(ts + pd.Timedelta(hours=24)),
-            "timestamp_sp":  str((ts + pd.Timedelta(hours=24)).astimezone(SP_TZ)),
-            "reference_hour": str(ts),
-            "pm25_forecast":  round(float(val), 2)
+        # Read operational CSV files
+        df_openaq = pd.read_csv(openaq_file)
+        df_openmeteo = pd.read_csv(openmeteo_file)
+
+        # Clean and merge OpenAQ + OpenMeteo data
+        df_clean = clean_data(df_openaq, df_openmeteo)
+
+        # Prepare datetime index for feature preprocessing
+        df_clean = df_clean.rename(columns={"PM2.5": "MP2.5"})
+        df_clean = df_clean.set_index("time")
+        df_clean.index = pd.to_datetime(df_clean.index, utc=True)
+
+        # Generate model features
+        X_processed = preprocess_features(df_clean)
+        X_processed = X_processed.dropna()
+
+        if X_processed.empty:
+            raise HTTPException(
+                status_code=422,
+                detail="Insufficient data to generate forecast.",
+            )
+
+        # Use the last 24 complete feature rows.
+        # The model predicts PM2.5 24 hours ahead for each reference hour.
+        X_future = X_processed.iloc[-24:]
+        y_pred = app.state.model.predict(X_future)
+        y_pred = np.clip(y_pred, 0, None)
+
+        # Build forecast payload with both UTC and São Paulo timestamps
+        forecast_series = [
+            {
+                "timestamp_utc": str(ts + pd.Timedelta(hours=24)),
+                "timestamp_sp": str((ts + pd.Timedelta(hours=24)).astimezone(SP_TZ)),
+                "reference_hour": str(ts),
+                "pm25_forecast": round(float(val), 2),
+            }
+            for ts, val in zip(X_future.index, y_pred)
+        ]
+
+        # Get the latest observed PM2.5 value
+        pm25_current = (
+            df_clean["MP2.5"].dropna().iloc[-1]
+            if df_clean["MP2.5"].notna().any()
+            else None
+        )
+
+        last_updated_sp = df_clean.index[-1].astimezone(SP_TZ)
+
+        response = {
+            "last_updated_utc": str(df_clean.index[-1]),
+            "last_updated_sp": str(last_updated_sp),
+            "pm25_current": round(float(pm25_current), 2)
+            if pm25_current is not None
+            else None,
+            "forecast_24h": forecast_series,
+            "pm25_max_24h": round(
+                float(max(f["pm25_forecast"] for f in forecast_series)), 2
+            ),
+            "pm25_min_24h": round(
+                float(min(f["pm25_forecast"] for f in forecast_series)), 2
+            ),
         }
-        for ts, val in zip(X_future.index, y_pred)
-    ]
 
-    # Current PM2.5 — last available real reading
-    pm25_atual = df_clean["MP2.5"].dropna().iloc[-1] \
-                 if df_clean["MP2.5"].notna().any() else None
+        # Store forecast response in memory cache
+        app.state.forecast_cache = response
+        app.state.forecast_cache_time = now
 
-    # Last updated — converted to SP for display
-    last_updated_sp = df_clean.index[-1].astimezone(SP_TZ)
+        return response
 
-    return {
-        "last_updated_utc": str(df_clean.index[-1]),
-        "last_updated_sp":  str(last_updated_sp),
-        "pm25_current":     round(float(pm25_atual), 2) if pm25_atual is not None else None,
-        "forecast_24h":     forecast_series,
-        "pm25_max_24h":     round(float(max(f["pm25_forecast"] for f in forecast_series)), 2),
-        "pm25_min_24h":     round(float(min(f["pm25_forecast"] for f in forecast_series)), 2),
-    }
+    except HTTPException:
+        raise
+
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

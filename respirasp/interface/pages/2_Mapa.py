@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import streamlit as st
 from styling import inject_css, IQAR_BANDS
-from app import stations, station_map
+from utils.map import stations, station_map
 
 st.set_page_config(page_title="Mapa · Respira SP", layout="wide")
 inject_css()
