@@ -46,6 +46,35 @@ app.state.model = joblib.load(
 )
 
 
+def _openaq_data_is_valid(
+    df_openaq: pd.DataFrame,
+    min_recent_hours: int = 48,
+    max_null_ratio: float = 0.5,
+) -> tuple[bool, str]:
+    """
+    Data-quality gate for a freshly fetched OpenAQ dataframe.
+
+    Prevents a broken/incomplete /update run (e.g. the pm25 sensor failing
+    to return data for that day) from being promoted to "latest" and
+    silently breaking /forecast. Returns (is_valid, reason).
+    """
+    if "pm25" not in df_openaq.columns:
+        return False, "Coluna 'pm25' ausente no fetch do OpenAQ (sensor pode ter falhado)."
+
+    if df_openaq["pm25"].dropna().empty:
+        return False, "Coluna 'pm25' presente mas sem nenhum valor válido."
+
+    recent = df_openaq.tail(min_recent_hours)
+    null_ratio = recent["pm25"].isna().mean()
+    if null_ratio > max_null_ratio:
+        return False, (
+            f"Dados de PM2.5 recentes insuficientes "
+            f"({null_ratio:.0%} nulos nas últimas {min_recent_hours}h)."
+        )
+
+    return True, ""
+
+
 @app.get("/")
 def root():
     return {"status": "Respira SP API online"}
@@ -72,6 +101,19 @@ def update():
     try:
         # Fetch and save operational data locally first
         df_openaq, df_openmeteo = fetch_operational_data(api_key)
+
+        # Data-quality gate: don't let a broken/incomplete fetch become the
+        # "latest" data served by /forecast. If this fails, nothing is
+        # uploaded and /forecast keeps serving the last good file in GCS.
+        is_valid, reason = _openaq_data_is_valid(df_openaq)
+        if not is_valid:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Fetch do OpenAQ falhou na validação de qualidade: {reason} "
+                    "O último dado operacional válido foi mantido — nada foi sobrescrito."
+                ),
+            )
 
         operational_path = Path(LOCAL_DATA_PATH) / "operational"
 

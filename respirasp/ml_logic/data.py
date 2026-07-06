@@ -58,7 +58,13 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     location_id = 6139516
     headers     = {"X-API-Key": api_key}
 
-    r = requests.get(
+    # Retry-enabled session — mirrors the OpenMeteo client below.
+    # Without this, a single transient timeout/rate-limit on the OpenAQ side
+    # silently drops that sensor (e.g. pm25) for the whole day's fetch,
+    # instead of being retried.
+    openaq_session = retry(requests.Session(), retries=5, backoff_factor=0.3)
+
+    r = openaq_session.get(
         f"{BASE_URL}/locations/{location_id}/sensors",
         headers=headers
     )
@@ -68,7 +74,7 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     def _fetch_sensor(sensor_id: int) -> pd.DataFrame:
         page, limit, dados = 1, 1000, []
         while True:
-            resp = requests.get(
+            resp = openaq_session.get(
                 f"{BASE_URL}/sensors/{sensor_id}/hours",
                 headers=headers,
                 params={
@@ -110,7 +116,10 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
             s = s[~s.index.duplicated(keep="first")]
             series[nome] = s
         except Exception as e:
-            print(f"  Warning — sensor {nome}: {e}")
+            # PM2.5 is the target variable — flag its failure loudly so it
+            # doesn't get missed in Cloud Run logs like a routine warning.
+            level = "CRITICAL" if nome == "pm25" else "Warning"
+            print(f"  {level} — sensor {nome} failed even after retries: {e}")
 
     df_openaq = pd.DataFrame(series).sort_index()
     df_openaq.index.name = "time"
@@ -187,7 +196,20 @@ def clean_data(df_openaq: pd.DataFrame, df_openmeteo: pd.DataFrame) -> pd.DataFr
     #  OpenAQ
     aq = df_openaq.copy()
 
-    aq["time"]  = pd.to_datetime(aq["time"], utc=True).dt.floor("h")
+    aq["time"] = pd.to_datetime(aq["time"], utc=True).dt.floor("h")
+
+    # Defensive check: if this ever runs on a file where the pm25 sensor
+    # failed to come through, fail with a clear message instead of a raw
+    # KeyError. The main safeguard is the quality gate in fast.py's /update
+    # (which should stop a bad file from ever reaching here) — this is the
+    # fallback in case that gate is bypassed (e.g. local mode, manual file).
+    if "pm25" not in aq.columns:
+        raise ValueError(
+            "Coluna 'pm25' ausente no arquivo operacional do OpenAQ — "
+            "o sensor de PM2.5 provavelmente falhou na coleta. "
+            "Verifique o /update mais recente."
+        )
+
     aq["PM2.5"] = pd.to_numeric(aq["pm25"], errors="coerce").astype("float32")
     aq = aq[["time", "PM2.5"]].copy()
     aq = aq.groupby("time", as_index=False)["PM2.5"].mean()
