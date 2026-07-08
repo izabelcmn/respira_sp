@@ -122,7 +122,7 @@ def inject_css() -> None:
         .gauge-unit {{ font-size: .75rem; color: {p['muted']}; letter-spacing: 2px; }}
 
         /* ----- chat ----- */
-        .chat-wrap {{ display: flex; flex-direction: column; gap: 10px; }}
+        .chat-wrap {{display: flex;flex-direction: column;gap: 10px;margin-bottom: 20px;}}
         .bubble {{
             max-width: 85%; padding: 10px 13px; border-radius: 14px;
             font-size: .85rem; line-height: 1.35;

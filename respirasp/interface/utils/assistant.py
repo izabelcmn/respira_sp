@@ -19,6 +19,7 @@ from utils.air_quality import (
     consultar_recomendacao_saude,
     contexto_cetesb,
     contexto_poluente,
+    contexto_ponto,
     montar_contexto_previsao,
 )
 
@@ -61,33 +62,33 @@ def _rule_based(
         classe_prevista = consultar_classificacao_cetesb(previsao["pm25_medio"])
         recomendacao_prevista = consultar_recomendacao_saude(classe_prevista)
         return (
-            f"A previsão entre **{previsao['inicio']:%d/%m %H:%M}** e "
-            f"**{previsao['fim']:%d/%m %H:%M}** indica PM2.5 médio de "
-            f"**{previsao['pm25_medio']:.1f} µg/m³**, com qualidade do ar "
-            f"**{classe_prevista}**. O menor valor previsto ocorre às "
-            f"**{previsao['horario_melhor']:%H:%M}** "
+            f"A previsão entre {previsao['inicio']:%d/%m %H:%M} e "
+            f"{previsao['fim']:%d/%m %H:%M} indica MP2.5 médio de "
+            f"{previsao['pm25_medio']:.1f} µg/m³, com qualidade do ar "
+            f"{classe_prevista}. O menor valor previsto ocorre às "
+            f"{previsao['horario_melhor']:%H:%M} "
             f"({previsao['pm25_min']:.1f} µg/m³). {recomendacao_prevista}"
         )
 
     if any(k in ql for k in ["amanhã", "amanha", "previsão", "previsao", "próxim", "proxim"]):
         return (
             "Ainda não encontrei uma tabela de previsão carregada no contexto. "
-            f"Com os dados atuais do painel, o PM2.5 está em **{pm25:.0f} µg/m³** "
-            f"e a qualidade do ar está **{label}**. {recomendacao_atual}"
+            f"Com os dados atuais do painel, o MP2.5 está em {pm25:.0f} µg/m³ "
+            f"e a qualidade do ar está {label}. {recomendacao_atual}"
         )
 
     if any(k in ql for k in ["sair", "caminhar", "correr", "exercício", "exercicio", "atividade"]):
         return recomendacao_atual
 
-    if any(k in ql for k in ["pm2.5", "pm25", "poluente", "o que é", "significa"]):
+    if any(k in ql for k in ["pm2.5", "pm25", "mp2.5","mp25","poluente", "o que é", "significa"]):
         return (
-            "PM2.5 são partículas finas com diâmetro menor que 2,5 micrômetros. "
+            "MP2.5 são partículas finas com diâmetro menor que 2,5 micrômetros. "
             "Por serem muito pequenas, podem penetrar profundamente nos pulmões e afetar a saúde respiratória e cardiovascular."
         )
 
     return (
-        f"Agora o IQAr está em **{iqar:.0f}** (**{label}**) e o PM2.5 está em "
-        f"**{pm25:.0f} µg/m³**. {recomendacao_atual}"
+        f"Agora o IQAr está em {iqar:.0f} ({label}) e o MP2.5 está em "
+        f"{pm25:.0f} µg/m³. {recomendacao_atual}"
     )
 
 
@@ -110,8 +111,8 @@ Você é o assistente inteligente do projeto RESPIRA SP.
 Use apenas as informações técnicas abaixo para responder ao usuário.
 
 Informações atuais do painel:
-- Poluente monitorado: PM2.5
-- Concentração atual de PM2.5: {pm25:.1f} µg/m³
+- Poluente monitorado: MP2.5
+- Concentração atual de MP2.5: {pm25:.1f} µg/m³
 - IQAr atual: {iqar:.0f}
 - Classificação atual da qualidade do ar: {label}
 - Recomendação de saúde associada à classificação atual: {recomendacao}{bloco_previsao}
@@ -121,6 +122,9 @@ Sobre o poluente monitorado:
 
 Sobre as recomendações de saúde:
 {contexto_cetesb}
+
+Sobre o ponto de previsão e/ou monitoramento:
+{contexto_ponto}
 
 Regras de resposta:
 - Responda em português do Brasil.

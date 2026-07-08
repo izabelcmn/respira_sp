@@ -176,7 +176,7 @@ with col_chat:
         if "chat" not in st.session_state:
             st.session_state.chat = [
                 ("bot",
-                 f"A qualidade do ar agora está **{label_now}** "
+                 f"A qualidade do ar agora está {label_now} "
                  f"(IQAr {iqar_now:.0f}) na estação {STATION}."),
             ]
 
