@@ -1,4 +1,5 @@
-"""pages/1_Previsão.py — Avaliação e previsão de PM2.5"""
+"""pages/1_Previsão.py — Avaliação e previsão de PM2.5
+(exibido como "Avaliação do modelo" na sidebar via CSS — arquivo NÃO renomeado)"""
 
 import requests
 import pandas as pd
@@ -20,7 +21,6 @@ DATASET = {
 }
 
 # ── Resultados walk-forward — conjunto de teste 2019 ─────────────────────────
-# Fonte: gráficos MAE e RMSE por janela (notebook de comparação)
 BACKTEST = [
     {"Modelo": "LightGBM", "MAE":  4.71, "RMSE":  6.03, "Rank": 1,
      "Observação": "Melhor modelo — menor MAE e RMSE no conjunto de teste."},
@@ -62,7 +62,8 @@ def forecast_chart(records: list) -> go.Figure:
     return fig
 
 # ── Layout ────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Previsão · Respira SP", layout="wide")
+st.set_page_config(page_title="Previsão · Respira SP", layout="wide",
+                   initial_sidebar_state="expanded")
 inject_css()
 
 st.markdown("## Avaliação dos modelos e Previsão de PM2.5 (24h)")
@@ -70,6 +71,19 @@ st.markdown(
     f'<p class="muted">Estação {STATION} · Walk-forward validation · '
     f'Horizonte de 24h direto (sem autorregressão)</p>',
     unsafe_allow_html=True)
+
+# ── O que é PM2.5? (contexto) ─────────────────────────────────────────────────
+with st.container(border=True):
+    st.markdown('<div class="card-title">O que é PM2.5?</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="muted">Partículas finas com diâmetro ≤ 2,5 µm — cerca de '
+        '30× mais finas que um fio de cabelo. Por serem minúsculas, penetram '
+        'fundo nos pulmões e chegam à corrente sanguínea, sendo associadas a '
+        'doenças respiratórias e cardiovasculares. É o poluente que este modelo '
+        'prevê para as próximas 24h.</p>',
+        unsafe_allow_html=True)
+
+st.divider()
 
 # ── 1. Dataset ────────────────────────────────────────────────────────────────
 with st.expander("Partição do dataset", expanded=False):
@@ -151,7 +165,6 @@ with st.container(border=True):
         st.plotly_chart(forecast_chart(data["forecast_24h"]),
                         use_container_width=True,
                         config={"displayModeBar": False})
-        # Classificação IQAR do pico previsto
         peak = max(r["pm25_forecast"] for r in data["forecast_24h"])
         cat, color = classify_iqar(pm25_to_iqar(peak))
         st.markdown(

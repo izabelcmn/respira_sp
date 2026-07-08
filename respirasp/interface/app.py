@@ -1,8 +1,10 @@
 """
 app.py  —  Respira SP / AirSP Intelligence  (Visão Geral)
+(exibido como "Dashboard" na sidebar via CSS — arquivo NÃO renomeado)
 """
 
 import os
+import re
 import requests
 import numpy as np
 import pandas as pd
@@ -17,7 +19,6 @@ from styling import (inject_css, render_gauge, PALETTE,
 
 
 # API
-
 API_URL = os.getenv("RESPIRA_API_URL", "http://localhost:8501")
 STATION = "Congonhas"
 
@@ -60,26 +61,22 @@ def forecast_chart(records: list) -> go.Figure:
         marker=dict(size=9, color=colors, line=dict(width=2, color=PALETTE["panel"])),
         hovertemplate="%{x|%d/%m %H:%M}<br><b>%{y:.1f}</b> µg/m³<extra></extra>"
     ))
-
     fig.update_layout(
         height=260, margin=dict(l=8, r=8, t=8, b=8),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color=PALETTE["muted"], family="Inter", size=12),
         showlegend=False,
         xaxis=dict(showgrid=False, zeroline=False),
-        yaxis=dict(
-            showgrid=True,
-            gridcolor="rgba(255,255,255,.06)",
-            zeroline=False,
-            title="PM2.5 (µg/m³)"
-        )
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,.06)",
+                   zeroline=False, title="PM2.5 (µg/m³)")
     )
     return fig
 
 
 # APP
 st.set_page_config(page_title="Respira SP · AirSP Intelligence",
-                   page_icon="🌫️", layout="wide")
+                   page_icon="🌫️", layout="wide",
+                   initial_sidebar_state="expanded")
 inject_css()
 
 api_data = fetch_forecast()
@@ -97,7 +94,6 @@ label_now, color_now = classify_iqar(iqar_now)
 
 
 # prepare chatbot
-
 forecast_df = pd.DataFrame(records)
 forecast_df["timestamp_utc"] = pd.to_datetime(forecast_df["timestamp_utc"], utc=True)
 forecast_df = (
@@ -133,11 +129,11 @@ with col_left:
         st.markdown('<div class="card-title">Mapa — Estação Congonhas</div>',
                     unsafe_allow_html=True)
         st.plotly_chart(
-    station_map(stations()),
-    width="stretch",
-    config={"displayModeBar": False},
-    key="mapa_rmsp_home"
-)
+            station_map(stations()),
+            width="stretch",
+            config={"displayModeBar": False},
+            key="mapa_rmsp_home"
+        )
 
 with col_mid:
     with st.container(border=True):
@@ -150,7 +146,6 @@ with col_mid:
             for _, lbl, c in IQAR_BANDS[:4])
         st.markdown(legend, unsafe_allow_html=True)
 
-    # Meteorological covariates (model features)
     with st.container(border=True):
         st.markdown('<div class="card-title">Condições Meteorológicas — Congonhas</div>',
                     unsafe_allow_html=True)
@@ -165,8 +160,7 @@ with col_mid:
         m4.metric("Precipitação", "0.0 mm")
 
 
-#          Chatbot
-
+# Chatbot
 with col_chat:
     with st.container(border=True):
         st.markdown(
@@ -176,12 +170,17 @@ with col_chat:
         if "chat" not in st.session_state:
             st.session_state.chat = [
                 ("bot",
-                 f"A qualidade do ar agora está {label_now} "
+                 f"A qualidade do ar agora está **{label_now}** "
                  f"(IQAr {iqar_now:.0f}) na estação {STATION}."),
             ]
 
+        # converte **negrito** e quebras de linha para HTML (a bolha é um <div>)
+        def _fmt(t: str) -> str:
+            t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+            return t.replace("\n", "<br>")
+
         bubbles = "".join(
-            f"<div class='bubble {who}'>{txt}</div>"
+            f"<div class='bubble {who}'>{_fmt(txt)}</div>"
             for who, txt in st.session_state.chat)
         st.markdown(f"<div class='chat-wrap'>{bubbles}</div>", unsafe_allow_html=True)
 
@@ -193,6 +192,7 @@ with col_chat:
                 label=label_now, forecast_df=forecast_df)
             st.session_state.chat.append(("bot", resposta))
             st.rerun()
+
 
 st.markdown("""
 <div class="pipe">

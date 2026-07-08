@@ -2,28 +2,19 @@
 utils/styling.py
 ================
 Tudo que é "aparência" mora aqui, separado da lógica de dados e dos gráficos.
-Assim você consegue mudar o visual inteiro mexendo só neste arquivo.
-
-Contém:
-  - PALETTE / IQAR_BANDS .... tokens de design (cores) num só lugar
-  - inject_css() ........... injeta o CSS global (cards, sidebar, chat, tipografia)
-  - pm25_to_iqar() ......... converte concentração de PM2.5 (µg/m³) -> IQAr (CETESB)
-  - classify_iqar() ........ devolve (rótulo, cor) para um valor de IQAr
-  - render_gauge() ......... desenha o anel/gauge SVG do IQAr (o elemento-assinatura)
-  - kpi_card() ............. helper para cartõezinhos de número
 """
 
 from __future__ import annotations
 import streamlit as st
 
 PALETTE = {
-    "bg":        "#0B1220",  # fundo da página
-    "panel":     "#16202E",  # fundo dos cards
-    "panel_2":   "#1C2738",  # variação (hover / chat bot)
+    "bg":        "#0B1220",
+    "panel":     "#16202E",
+    "panel_2":   "#1C2738",
     "border":    "rgba(255,255,255,0.07)",
-    "text":      "#E6EDF5",  # texto principal
-    "muted":     "#8B97A8",  # texto secundário / legendas
-    "brand":     "#3B82F6",  # azul de destaque (nav ativa, balão do usuário)
+    "text":      "#E6EDF5",
+    "muted":     "#8B97A8",
+    "brand":     "#3B82F6",
     "brand_dk":  "#1E3A8A",
 }
 
@@ -44,17 +35,14 @@ def pm25_to_iqar(conc: float) -> float:
     """
     Converte concentração de PM2.5 (µg/m³, média 24h) em IQAr usando a tabela
     da CETESB e interpolação linear — exatamente o procedimento oficial.
-    Mantemos isso correto porque a banca pode perguntar de onde sai o "62".
     """
     if conc <= 0:
         return 0.0
-    # Procura em qual faixa a concentração cai e interpola.
     for i in range(len(_PM25_CONC) - 1):
         c_lo, c_hi = _PM25_CONC[i], _PM25_CONC[i + 1]
         if c_lo <= conc <= c_hi:
             i_lo, i_hi = _PM25_IQAR[i], _PM25_IQAR[i + 1]
             return i_lo + (i_hi - i_lo) * (conc - c_lo) / (c_hi - c_lo)
-    # Acima do último ponto: estende a última inclinação (caso extremo).
     return _PM25_IQAR[-1]
 
 
@@ -66,8 +54,6 @@ def classify_iqar(iqar: float) -> tuple[str, str]:
     return IQAR_BANDS[-1][1], IQAR_BANDS[-1][2]
 
 
-# 2) CSS GLOBAL
-#    Injete uma única vez, no topo de cada página, com inject_css().
 def inject_css() -> None:
     p = PALETTE
     st.markdown(
@@ -81,23 +67,54 @@ def inject_css() -> None:
         }}
         .stApp {{ background: {p['bg']}; }}
 
-        /* esconde o menu/rodapé padrão do Streamlit para ficar mais "produto" */
-        #MainMenu, footer, header {{ visibility: hidden; }}
+        /* esconde menu ⋮, rodapé e toolbar (Deploy) — não o header inteiro */
+        #MainMenu, footer {{ visibility: hidden; }}
+        [data-testid="stToolbar"] {{ display: none; }}
+        header[data-testid="stHeader"] {{ background: transparent; }}
+
+        /* ===== SIDEBAR SEMPRE ABERTA =====
+           Força a própria sidebar a ficar visível (data-testid estável),
+           em vez de depender do botão de expandir (que some). */
+        section[data-testid="stSidebar"] {{
+            background: {p['panel']};
+            border-right: 1px solid {p['border']};
+            transform: none !important;
+            visibility: visible !important;
+            margin-left: 0 !important;
+            min-width: 244px !important;
+            width: 244px !important;
+        }}
+        section[data-testid="stSidebar"][aria-expanded="false"] {{
+            transform: none !important;
+            margin-left: 0 !important;
+            width: 244px !important;
+            min-width: 244px !important;
+        }}
+        section[data-testid="stSidebar"] > div {{ width: 244px !important; }}
+        section[data-testid="stSidebar"] * {{ color: {p['text']}; }}
+
+        /* remove o botão « de recolher — a sidebar é fixa, o botão não tem função */
+        [data-testid="stSidebarHeader"] button {{ display: none !important; }}
+        [data-testid="stSidebarCollapseButton"] {{ display: none !important; }}
+
+        /* ===== RENOMEIA RÓTULOS DA NAV (só o texto exibido, não o arquivo) =====
+           1º item (home / app.py)   -> "Dashboard"
+           2º item (1_Previsão.py)   -> "Avaliação do modelo"
+           Truque cosmético: zera a fonte do texto original e escreve por cima
+           via ::after. Se não casar na sua versão, fica o nome antigo — nada quebra. */
+        [data-testid="stSidebarNav"] li:nth-child(1) a {{ font-size: 0; }}
+        [data-testid="stSidebarNav"] li:nth-child(1) a::after {{
+            content: "Dashboard"; font-size: 0.9rem;
+        }}
+        [data-testid="stSidebarNav"] li:nth-child(2) a {{ font-size: 0; }}
+        [data-testid="stSidebarNav"] li:nth-child(2) a::after {{
+            content: "Avaliação do modelo"; font-size: 0.9rem;
+        }}
 
         /* largura útil um pouco maior */
         .block-container {{ padding-top: 1.4rem; max-width: 1400px; }}
 
-        /* ----- sidebar ----- */
-        section[data-testid="stSidebar"] {{
-            background: {p['panel']};
-            border-right: 1px solid {p['border']};
-        }}
-        section[data-testid="stSidebar"] * {{ color: {p['text']}; }}
-
-        /* ----- cards -----
-           Usamos st.container(border=True) como card (HTML nativo do Streamlit).
-           Estilizamos o wrapper do container em vez de injetar <div> manuais —
-           isso evita o bug de a div fechar sozinha entre chamadas de st.markdown. */
+        /* ----- cards ----- */
         div[data-testid="stVerticalBlockBorderWrapper"] {{
             background: {p['panel']};
             border: 1px solid {p['border']} !important;
@@ -109,8 +126,6 @@ def inject_css() -> None:
             font-size: 0.95rem; font-weight: 600; color: {p['text']};
             margin: 6px 0 12px 0; letter-spacing: .2px;
         }}
-        /* .card: só para blocos HTML AUTOCONTIDOS (kpi_card), nunca para envolver
-           widgets do Streamlit ao longo de várias chamadas. */
         .card {{
             background: {p['panel']}; border: 1px solid {p['border']};
             border-radius: 16px; padding: 16px 18px;
@@ -122,7 +137,7 @@ def inject_css() -> None:
         .gauge-unit {{ font-size: .75rem; color: {p['muted']}; letter-spacing: 2px; }}
 
         /* ----- chat ----- */
-        .chat-wrap {{display: flex;flex-direction: column;gap: 10px;margin-bottom: 20px;}}
+        .chat-wrap {{ display: flex; flex-direction: column; gap: 10px; }}
         .bubble {{
             max-width: 85%; padding: 10px 13px; border-radius: 14px;
             font-size: .85rem; line-height: 1.35;
@@ -158,10 +173,9 @@ def inject_css() -> None:
     )
 
 
-# 3) COMPONENTES VISUAIS PRONTOS
 def render_gauge(iqar: float, max_scale: float = 200.0) -> str:
     label, color = classify_iqar(iqar)
-    frac = max(0.0, min(iqar / max_scale, 1.0))   # fração do anel a preencher
+    frac = max(0.0, min(iqar / max_scale, 1.0))
     r = 52
     circ = 2 * 3.14159 * r
     dash = circ * frac
