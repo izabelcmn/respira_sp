@@ -10,11 +10,11 @@ STATION      = "Congonhas"
 TRAIN_PERIOD = "2016–2019"
 
 st.set_page_config(page_title="Sobre · Respira SP", page_icon="ℹ️",
-                   layout="wide", initial_sidebar_state="expanded")
+                    layout="wide", initial_sidebar_state="expanded")
 inject_css()
 
 # ── Pasta com as fotos da equipe ──────────────────────────────────────────────
-# Crie: respirasp/interface/assets/team/  e coloque izabel.jpg, gabriel.jpg, joao.jpg
+# Crie: respirasp/interface/assets/team/  e coloque izabel.jpg, Gabriel.jpg, Joao.jpg
 ASSETS = Path(__file__).resolve().parent.parent / "assets" / "team"
 
 TEAM = [
@@ -22,21 +22,28 @@ TEAM = [
      "papel": " ",
      "foto": "izabel.jpg",
      "github": "github.com/izabel",
-     "linkedin": "linkedin.com/in/izabel"},
+     "linkedin": "https://www.linkedin.com/in/izabel-nogueira-10058552/"},
     {"nome": "Gabriel Marques",
      "papel": " ",
-     "foto": "gabriel.jpg",
+     "foto": "Gabriel.jpg",
      "github": "github.com/gabriel",
-     "linkedin": "linkedin.com/in/gabriel"},
+     "linkedin": "https://www.linkedin.com/in/gabriel-marques-bar%C3%A7ante-pires-70a981276/"},
     {"nome": "João Pedro Campos Correa de Araújo",
      "papel": " ",
-     "foto": "joao.jpg",
+     "foto": "Joao.jpg",
      "github": "github.com/JoaoPedroCampos00",
-     "linkedin": "linkedin.com/in/joao"},
+     "linkedin": "https://www.linkedin.com/in/jo%C3%A3o-pedro-campos-correa-de-araujo-216055187/"},
 ]
 
 
-def _img_data_uri(path: Path) -> str | None:
+def normalizar_url(url: str) -> str:
+    """Garante que a URL começa com https://"""
+    if not url.startswith(("http://", "https://")):
+        return "https://" + url
+    return url
+
+
+def _img_data_uri(path: Path):
     """Lê a foto e devolve um data-URI base64 (ou None se o arquivo não existir)."""
     if not path.exists():
         return None
@@ -47,7 +54,7 @@ def _img_data_uri(path: Path) -> str | None:
 
 
 def member_card(m: dict) -> str:
-    """Cartão de um membro: foto circular (ou iniciais), nome, papel e links."""
+    """Cartão de um membro: foto circular (ou iniciais), nome, papel e links clicáveis."""
     uri = _img_data_uri(ASSETS / m["foto"])
     if uri:
         avatar = (f'<img src="{uri}" style="width:120px;height:120px;'
@@ -62,6 +69,11 @@ def member_card(m: dict) -> str:
                   f'font-weight:800;color:{PALETTE["muted"]};'
                   f'border:3px solid {PALETTE["border"]};margin:0 auto;">'
                   f'{iniciais}</div>')
+
+    github_url = normalizar_url(m["github"])
+    linkedin_url = normalizar_url(m["linkedin"])
+    link_style = f'color:{PALETTE["muted"]};text-decoration:underline;'
+
     return f"""
     <div style="text-align:center;">
       {avatar}
@@ -69,7 +81,8 @@ def member_card(m: dict) -> str:
                   line-height:1.3;">{m['nome']}</div>
       <div class="muted" style="margin-top:2px;">{m['papel']}</div>
       <div class="muted" style="margin-top:8px;font-size:.72rem;line-height:1.6;">
-        {m['github']}<br>{m['linkedin']}
+        <a href="{github_url}" target="_blank" rel="noopener noreferrer" style="{link_style}">GitHub</a><br>
+        <a href="{linkedin_url}" target="_blank" rel="noopener noreferrer" style="{link_style}">LinkedIn</a>
       </div>
     </div>
     """
@@ -78,8 +91,8 @@ def member_card(m: dict) -> str:
 st.markdown("## ℹ️ Sobre o Respira SP")
 st.markdown(f"""
 O **Respira SP** prevê **PM2.5** **24 horas à frente** em São Paulo. O modelo
-operacional é um **LightGBM (GBDT)** treinado na estação **{STATION}** ({TRAIN_PERIOD}),
-servido aqui sobre dados reais recentes.
+operacional é um **LightGBM (GBDT)** treinado na estação **{STATION}**
+({TRAIN_PERIOD}), servido aqui sobre dados reais recentes.
 """)
 
 col1, col2 = st.columns(2)
