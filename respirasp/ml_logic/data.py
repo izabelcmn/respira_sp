@@ -183,6 +183,140 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     return df_openaq, df_openmeteo
 
 
+
+def apply_pm25_strategy_3(
+    df: pd.DataFrame,
+    target_col: str = "PM2.5",
+    time_col: str = "time",
+    max_temporal_gap_hours: int = 12,
+) -> pd.DataFrame:
+    """
+    Applies the same missing-value strategy used by the selected LightGBM model:
+
+    1. Interpolate only short internal PM2.5 gaps of up to 12 consecutive hours
+       using time-based interpolation.
+    2. Fill remaining PM2.5 gaps with the seasonal mean for the same
+       month + day of week + hour.
+
+    The function does not add helper columns to the returned dataframe, so the
+    feature schema expected by the trained model remains unchanged.
+    """
+    if time_col not in df.columns:
+        raise ValueError(f"Column '{time_col}' not found in dataframe.")
+
+    if target_col not in df.columns:
+        raise ValueError(f"Column '{target_col}' not found in dataframe.")
+
+    result = df.copy()
+    result[time_col] = pd.to_datetime(
+        result[time_col],
+        utc=True,
+        errors="coerce",
+    )
+
+    if result[time_col].isna().any():
+        raise ValueError(
+            f"Column '{time_col}' contains invalid timestamps."
+        )
+
+    result[target_col] = pd.to_numeric(
+        result[target_col],
+        errors="coerce",
+    )
+
+    result = (
+        result.sort_values(time_col)
+        .drop_duplicates(subset=[time_col], keep="last")
+        .set_index(time_col)
+    )
+
+    if not result.index.is_monotonic_increasing:
+        result = result.sort_index()
+
+    missing_before = int(result[target_col].isna().sum())
+
+    # Strategy 2 step: interpolate only short internal gaps (<= 12h).
+    original_series = result[target_col].copy()
+    interpolated_series = original_series.interpolate(
+        method="time",
+        limit_area="inside",
+    )
+
+    missing_mask = original_series.isna()
+
+    if missing_mask.any():
+        gap_groups = missing_mask.ne(missing_mask.shift()).cumsum()
+
+        for _, gap_mask in missing_mask.groupby(gap_groups):
+            gap_index = gap_mask.index[gap_mask]
+
+            if len(gap_index) == 0:
+                continue
+
+            gap_start = gap_index[0]
+            gap_end = gap_index[-1]
+            gap_length = len(gap_index)
+
+            previous_position = result.index.get_loc(gap_start) - 1
+            next_position = result.index.get_loc(gap_end) + 1
+
+            is_internal_gap = (
+                previous_position >= 0
+                and next_position < len(result)
+                and pd.notna(original_series.iloc[previous_position])
+                and pd.notna(original_series.iloc[next_position])
+            )
+
+            if is_internal_gap and gap_length <= max_temporal_gap_hours:
+                result.loc[gap_index, target_col] = interpolated_series.loc[
+                    gap_index
+                ]
+
+    missing_after_temporal = int(result[target_col].isna().sum())
+
+    # Strategy 3 step: seasonal mean by month + weekday + hour.
+    if missing_after_temporal > 0:
+        seasonal_keys = pd.DataFrame(
+            {
+                "month": result.index.month,
+                "day_of_week": result.index.dayofweek,
+                "hour": result.index.hour,
+                target_col: result[target_col].values,
+            },
+            index=result.index,
+        )
+
+        seasonal_mean = (
+            seasonal_keys
+            .groupby(
+                ["month", "day_of_week", "hour"],
+                dropna=False,
+            )[target_col]
+            .transform("mean")
+        )
+
+        result[target_col] = result[target_col].fillna(seasonal_mean)
+
+    missing_after_seasonal = int(result[target_col].isna().sum())
+
+    result[target_col] = result[target_col].astype("float32")
+    result = result.reset_index()
+
+    print(
+        "✅ PM2.5 strategy 3 applied — "
+        f"missing before: {missing_before} | "
+        f"after temporal interpolation: {missing_after_temporal} | "
+        f"after seasonal imputation: {missing_after_seasonal}"
+    )
+
+    if missing_after_seasonal > 0:
+        print(
+            "⚠️ Some PM2.5 values could not be imputed because no valid "
+            "seasonal mean was available for the same month, weekday and hour."
+        )
+
+    return result
+
 def clean_data(df_openaq: pd.DataFrame, df_openmeteo: pd.DataFrame) -> pd.DataFrame:
     """
     Receives raw data from OpenAQ and OpenMeteo separately,
@@ -233,6 +367,11 @@ def clean_data(df_openaq: pd.DataFrame, df_openmeteo: pd.DataFrame) -> pd.DataFr
                             "precipitation", "wind_speed_10m"])
     df = df[COLUMN_NAMES_RAW]
     df = df.sort_values("time").reset_index(drop=True)
+
+    # Apply the same missing-value treatment used during training of the
+    # selected LightGBM model: temporal interpolation for gaps <= 12h,
+    # followed by seasonal mean imputation for remaining gaps.
+    df = apply_pm25_strategy_3(df)
 
     print(f"✅ data cleaned — {len(df)} linhas | "
           f"range: {df['time'].min()} → {df['time'].max()} | "
