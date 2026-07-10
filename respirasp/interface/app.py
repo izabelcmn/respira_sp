@@ -84,11 +84,30 @@ data = api_data or synthetic_forecast()
 is_live = api_data is not None
 
 records = data["forecast_24h"]
-pm25_atual = data["pm25_current"] or records[0]["pm25_forecast"]
-last_ts = pd.to_datetime(
-    data.get("last_updated_sp", data["last_updated_utc"]),
-    utc=True
-).tz_convert("America/Sao_Paulo")
+
+forecast_temp = pd.DataFrame(records)
+
+timestamp_col = (
+    "timestamp_sp"
+    if "timestamp_sp" in forecast_temp.columns
+    else "timestamp_utc"
+)
+
+forecast_temp["timestamp"] = pd.to_datetime(
+    forecast_temp[timestamp_col],
+    utc=True,
+).dt.tz_convert("America/Sao_Paulo")
+
+forecast_temp = forecast_temp.sort_values("timestamp")
+
+agora_sp = pd.Timestamp.now(tz="America/Sao_Paulo").floor("h")
+
+posicao = forecast_temp["timestamp"].sub(agora_sp).abs().idxmin()
+registro_atual = forecast_temp.loc[posicao]
+
+pm25_atual = float(registro_atual["pm25_forecast"])
+last_ts = registro_atual["timestamp"]
+
 iqar_now = pm25_to_iqar(pm25_atual)
 label_now, color_now = classify_iqar(iqar_now)
 

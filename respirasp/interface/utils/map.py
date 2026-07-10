@@ -37,14 +37,24 @@ def station_map(df: pd.DataFrame) -> go.Figure:
 
     # ── estações de contexto (demo): menores e semitransparentes ──────────────
     if not outras.empty:
-        cores_o = [classify_iqar(pm25_to_iqar(v))[1] for v in outras["pm25"]]
+        cor_contexto = "#F97316"
+
         fig.add_trace(go.Scattermap(
-            lat=outras["lat"], lon=outras["lon"], mode="markers",
-            marker=dict(size=16, color=cores_o, opacity=0.55),
+            lat=outras["lat"],
+            lon=outras["lon"],
+            mode="markers",
+            marker=dict(
+                size=18,
+                color=cor_contexto,
+                opacity=0.85,
+            ),
             text=outras["pm25"].astype(int).astype(str),
             customdata=outras["estacao"],
-            hovertemplate="<b>%{customdata}</b> (demo)"
-                          "<br>PM2.5: %{text} µg/m³<extra></extra>"))
+            hovertemplate=(
+                "<b>%{customdata}</b> (demo)"
+                "<br>PM2.5: %{text} µg/m³<extra></extra>"
+            ),
+        ))
 
     # ── Congonhas: anel branco + marcador maior + valor (é a estação real) ────
     if not congon.empty:

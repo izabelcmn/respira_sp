@@ -13,6 +13,7 @@ import streamlit as st
 from google import genai
 
 from utils.air_quality import (
+    TZ_SP,
     carregar_previsao,
     consultar_classificacao_cetesb,
     consultar_previsao,
@@ -99,6 +100,8 @@ def _build_context(
     forecast_df: pd.DataFrame | None = None,
 ) -> str:
     """Constrói o contexto enviado ao LLM usando leitura atual e previsão, quando disponível."""
+    
+    agora_sp = pd.Timestamp.now(tz=TZ_SP)
     pm25 = float(reading.get("pm25", 0))
     recomendacao = consultar_recomendacao_saude(label)
 
@@ -109,6 +112,9 @@ def _build_context(
     contexto = f"""
 Você é o assistente inteligente do projeto RESPIRA SP.
 Use apenas as informações técnicas abaixo para responder ao usuário.
+
+Data e hora atual em São Paulo:
+- {agora_sp:%d/%m/%Y %H:%M}
 
 Informações atuais do painel:
 - Poluente monitorado: MP2.5
@@ -132,6 +138,8 @@ Regras de resposta:
 - Responda em até 3 frases, salvo se o usuário pedir mais detalhes.
 - Use apenas as informações fornecidas neste contexto.
 - Use os horários em horário de São Paulo, não em UTC.
+- Considere como "hoje" exclusivamente a data atual em São Paulo informada no contexto.
+- Nunca interprete a primeira data da previsão como sendo automaticamente a data atual.
 - Não invente valores, bairros, horários ou previsões que não estejam no contexto.
 - Não altere a classificação da qualidade do ar.
 - Não dê diagnóstico médico.

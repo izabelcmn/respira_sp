@@ -21,6 +21,10 @@ with st.container(border=True):
         for _, lbl, c in IQAR_BANDS)
     st.markdown(legend, unsafe_allow_html=True)
 
-st.markdown('<p class="muted">Congonhas (destacada) tem previsão real do '
-            'modelo. As demais estações são contexto geográfico com valores '
-            'ilustrativos (demo).</p>', unsafe_allow_html=True)
+st.markdown(
+    '<p class="muted">'
+    'Congonhas (verde e destacada) apresenta a previsão do modelo. '
+    'As demais estações, em laranja, representam apenas contexto geográfico ilustrativo.'
+    '</p>',
+    unsafe_allow_html=True,
+)

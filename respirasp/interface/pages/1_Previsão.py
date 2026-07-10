@@ -76,12 +76,17 @@ st.markdown(
 with st.container(border=True):
     st.markdown('<div class="card-title">O que é PM2.5?</div>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="muted">Partículas finas com diâmetro ≤ 2,5 µm — cerca de '
-        '30× mais finas que um fio de cabelo. Por serem minúsculas, penetram '
-        'fundo nos pulmões e chegam à corrente sanguínea, sendo associadas a '
-        'doenças respiratórias e cardiovasculares. É o poluente que este modelo '
-        'prevê para as próximas 24h.</p>',
-        unsafe_allow_html=True)
+        '<p class="muted">'
+        'PM2.5 vem do inglês <i>Particulate Matter</i> '
+        '(MP — Material Particulado, em português) e corresponde a partículas '
+        'finas com diâmetro ≤ 2,5 µm — cerca de 30× mais finas que um fio de cabelo. '
+        'Por serem minúsculas, podem penetrar profundamente nos pulmões e alcançar '
+        'a corrente sanguínea, estando associadas a impactos nos sistemas '
+        'respiratório e cardiovascular. É o poluente que este modelo prevê '
+        'para as próximas 24h.'
+        '</p>',
+        unsafe_allow_html=True,
+    )
 
 st.divider()
 
