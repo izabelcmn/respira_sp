@@ -124,9 +124,16 @@ reading = {"pm25": pm25_atual, "timestamp": last_ts}
 
 with st.sidebar:
     st.markdown(
-        f"<h2 style='margin:0'>🌫️ AirSP <span style='color:{PALETTE['brand']}'>Intelligence</span></h2>"
-        f"<p class='muted' style='margin-top:2px'>Respira SP · previsão de PM2.5</p>",
-        unsafe_allow_html=True)
+        f"""
+        <h2 style='margin:0'>
+            🌫️ RESPIRA <span style='color:{PALETTE["brand"]}'>SP</span>
+        </h2>
+        <p class='muted' style='margin-top:6px'>
+            Sistema inteligente de previsão da qualidade do ar
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
     st.divider()
     if is_live:
         st.caption("🟢 LightGBM ativo · dados operacionais")
