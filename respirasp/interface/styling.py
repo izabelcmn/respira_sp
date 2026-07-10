@@ -72,30 +72,21 @@ def inject_css() -> None:
         [data-testid="stToolbar"] {{ display: none; }}
         header[data-testid="stHeader"] {{ background: transparent; }}
 
-        /* ===== SIDEBAR SEMPRE ABERTA =====
-           Força a própria sidebar a ficar visível (data-testid estável),
-           em vez de depender do botão de expandir (que some). */
+        /* ===== SIDEBAR — estilo visual + botão « de recolher/voltar ATIVO =====
+           Antes a sidebar era travada sempre aberta com transform/visibility/
+           margin-left em !important, e o próprio botão « ficava com
+           display:none — por isso "o botão de voltar" não fazia nada.
+           Agora só estilizamos aparência (cor, largura quando expandida) e
+           deixamos o estado aria-expanded="false" livre para o comportamento
+           nativo do Streamlit recolher a sidebar e reexibir o botão de abrir. */
         section[data-testid="stSidebar"] {{
             background: {p['panel']};
             border-right: 1px solid {p['border']};
-            transform: none !important;
-            visibility: visible !important;
-            margin-left: 0 !important;
             min-width: 244px !important;
             width: 244px !important;
-        }}
-        section[data-testid="stSidebar"][aria-expanded="false"] {{
-            transform: none !important;
-            margin-left: 0 !important;
-            width: 244px !important;
-            min-width: 244px !important;
         }}
         section[data-testid="stSidebar"] > div {{ width: 244px !important; }}
         section[data-testid="stSidebar"] * {{ color: {p['text']}; }}
-
-        /* remove o botão « de recolher — a sidebar é fixa, o botão não tem função */
-        [data-testid="stSidebarHeader"] button {{ display: none !important; }}
-        [data-testid="stSidebarCollapseButton"] {{ display: none !important; }}
 
         /* ===== RENOMEIA RÓTULOS DA NAV (só o texto exibido, não o arquivo) =====
            1º item (home / app.py)   -> "Dashboard"
