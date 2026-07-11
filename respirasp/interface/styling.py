@@ -67,10 +67,33 @@ def inject_css() -> None:
         }}
         .stApp {{ background: {p['bg']}; }}
 
-        /* esconde menu ⋮, rodapé e toolbar (Deploy) — não o header inteiro */
+        /* Mantém o header porque nele ficam os controles nativos que
+           recolhem e reabrem a sidebar. Escondemos somente os itens que não
+           interessam ao usuário final. */
         #MainMenu, footer {{ visibility: hidden; }}
-        [data-testid="stToolbar"] {{ display: none; }}
-        header[data-testid="stHeader"] {{ background: transparent; }}
+        [data-testid="stAppDeployButton"] {{ display: none !important; }}
+        header[data-testid="stHeader"] {{
+            background: transparent;
+            z-index: 1001;
+        }}
+
+        /* O botão de abrir a sidebar fica dentro do header/toolbar em várias
+           versões do Streamlit. Nunca esconder o toolbar inteiro. */
+        [data-testid="stToolbar"] {{
+            display: flex !important;
+            visibility: visible !important;
+        }}
+
+        [data-testid="stSidebarCollapsedControl"],
+        button[data-testid="stBaseButton-headerNoPadding"],
+        button[kind="headerNoPadding"] {{
+            display: inline-flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            position: relative !important;
+            z-index: 1002 !important;
+        }}
 
         /* ===== SIDEBAR — estilo visual + botão « de recolher/voltar ATIVO =====
            Antes a sidebar era travada sempre aberta com transform/visibility/
@@ -82,24 +105,44 @@ def inject_css() -> None:
         section[data-testid="stSidebar"] {{
             background: {p['panel']};
             border-right: 1px solid {p['border']};
+        }}
+
+        /* A largura fixa vale apenas quando a sidebar está aberta. Não usamos
+           transform/margin/visibility aqui, pois isso quebraria o abre/fecha
+           nativo do Streamlit. */
+        section[data-testid="stSidebar"][aria-expanded="true"] {{
             min-width: 244px !important;
             width: 244px !important;
         }}
-        section[data-testid="stSidebar"] > div {{ width: 244px !important; }}
+        section[data-testid="stSidebar"][aria-expanded="true"] > div {{
+            width: 244px !important;
+        }}
         section[data-testid="stSidebar"] * {{ color: {p['text']}; }}
 
-        /* ===== RENOMEIA RÓTULOS DA NAV (só o texto exibido, não o arquivo) =====
-           1º item (home / app.py)   -> "Dashboard"
-           2º item (1_Previsão.py)   -> "Avaliação do modelo"
-           Truque cosmético: zera a fonte do texto original e escreve por cima
-           via ::after. Se não casar na sua versão, fica o nome antigo — nada quebra. */
-        [data-testid="stSidebarNav"] li:nth-child(1) a {{ font-size: 0; }}
-        [data-testid="stSidebarNav"] li:nth-child(1) a::after {{
-            content: "Dashboard"; font-size: 0.9rem;
+        /* Botão de recolher dentro da sidebar. */
+        section[data-testid="stSidebar"] button {{
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
         }}
-        [data-testid="stSidebarNav"] li:nth-child(2) a {{ font-size: 0; }}
-        [data-testid="stSidebarNav"] li:nth-child(2) a::after {{
-            content: "Avaliação do modelo"; font-size: 0.9rem;
+
+        /* No celular a sidebar ocupa a maior parte da tela, mas não ultrapassa
+           a largura disponível. O botão nativo continua responsável por fechar
+           e reabrir o menu hambúrguer. */
+        @media (max-width: 768px) {{
+            section[data-testid="stSidebar"][aria-expanded="true"] {{
+                width: min(88vw, 320px) !important;
+                min-width: min(88vw, 320px) !important;
+                max-width: 88vw !important;
+            }}
+            section[data-testid="stSidebar"][aria-expanded="true"] > div {{
+                width: min(88vw, 320px) !important;
+                max-width: 88vw !important;
+            }}
+            .block-container {{
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
+            }}
         }}
 
         /* largura útil um pouco maior */
