@@ -24,7 +24,7 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
                        precipitation, wind_speed_10m (UTC)
     """
 
-    # ── Date range: calculated in SP, converted to UTC for APIs ───────
+    #  Date range: calculated in SP, converted to UTC for APIs ─
     SP_TZ     = ZoneInfo("America/Sao_Paulo")
     today_sp  = datetime.now(SP_TZ)
     date_to   = today_sp - timedelta(days=1)    # yesterday in SP
@@ -53,12 +53,18 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
           f"{date_from.strftime('%Y-%m-%d')} → {date_to.strftime('%Y-%m-%d')} "
           f"(UTC: {date_from_str} → {date_to_str})")
 
-    # ── 1. OpenAQ ─────────────────────────────────────────────────────
+    #  1. OpenAQ
     BASE_URL    = "https://api.openaq.org/v3"
     location_id = 6139516
     headers     = {"X-API-Key": api_key}
 
-    r = requests.get(
+    # Retry-enabled session — mirrors the OpenMeteo client below.
+    # Without this, a single transient timeout/rate-limit on the OpenAQ side
+    # silently drops that sensor (e.g. pm25) for the whole day's fetch,
+    # instead of being retried.
+    openaq_session = retry(requests.Session(), retries=5, backoff_factor=0.3)
+
+    r = openaq_session.get(
         f"{BASE_URL}/locations/{location_id}/sensors",
         headers=headers
     )
@@ -68,7 +74,7 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     def _fetch_sensor(sensor_id: int) -> pd.DataFrame:
         page, limit, dados = 1, 1000, []
         while True:
-            resp = requests.get(
+            resp = openaq_session.get(
                 f"{BASE_URL}/sensors/{sensor_id}/hours",
                 headers=headers,
                 params={
@@ -110,7 +116,10 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
             s = s[~s.index.duplicated(keep="first")]
             series[nome] = s
         except Exception as e:
-            print(f"  Warning — sensor {nome}: {e}")
+            # PM2.5 is the target variable — flag its failure loudly so it
+            # doesn't get missed in Cloud Run logs like a routine warning.
+            level = "CRITICAL" if nome == "pm25" else "Warning"
+            print(f"  {level} — sensor {nome} failed even after retries: {e}")
 
     df_openaq = pd.DataFrame(series).sort_index()
     df_openaq.index.name = "time"
@@ -121,7 +130,7 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     df_openaq.to_csv(openaq_path, index=False, encoding="utf-8")
     print(f"✅ OpenAQ saved: {openaq_path.name} ({len(df_openaq)} rows)")
 
-    # ── 2. OpenMeteo ──────────────────────────────────────────────────
+    #  2. OpenMeteo
     cache_session    = requests_cache.CachedSession(".cache", expire_after=-1)
     retry_session    = retry(cache_session, retries=5, backoff_factor=0.2)
     openmeteo_client = openmeteo_requests.Client(session=retry_session)
@@ -174,6 +183,140 @@ def fetch_operational_data(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     return df_openaq, df_openmeteo
 
 
+
+def apply_pm25_strategy_3(
+    df: pd.DataFrame,
+    target_col: str = "PM2.5",
+    time_col: str = "time",
+    max_temporal_gap_hours: int = 12,
+) -> pd.DataFrame:
+    """
+    Applies the same missing-value strategy used by the selected LightGBM model:
+
+    1. Interpolate only short internal PM2.5 gaps of up to 12 consecutive hours
+       using time-based interpolation.
+    2. Fill remaining PM2.5 gaps with the seasonal mean for the same
+       month + day of week + hour.
+
+    The function does not add helper columns to the returned dataframe, so the
+    feature schema expected by the trained model remains unchanged.
+    """
+    if time_col not in df.columns:
+        raise ValueError(f"Column '{time_col}' not found in dataframe.")
+
+    if target_col not in df.columns:
+        raise ValueError(f"Column '{target_col}' not found in dataframe.")
+
+    result = df.copy()
+    result[time_col] = pd.to_datetime(
+        result[time_col],
+        utc=True,
+        errors="coerce",
+    )
+
+    if result[time_col].isna().any():
+        raise ValueError(
+            f"Column '{time_col}' contains invalid timestamps."
+        )
+
+    result[target_col] = pd.to_numeric(
+        result[target_col],
+        errors="coerce",
+    )
+
+    result = (
+        result.sort_values(time_col)
+        .drop_duplicates(subset=[time_col], keep="last")
+        .set_index(time_col)
+    )
+
+    if not result.index.is_monotonic_increasing:
+        result = result.sort_index()
+
+    missing_before = int(result[target_col].isna().sum())
+
+    # Strategy 2 step: interpolate only short internal gaps (<= 12h).
+    original_series = result[target_col].copy()
+    interpolated_series = original_series.interpolate(
+        method="time",
+        limit_area="inside",
+    )
+
+    missing_mask = original_series.isna()
+
+    if missing_mask.any():
+        gap_groups = missing_mask.ne(missing_mask.shift()).cumsum()
+
+        for _, gap_mask in missing_mask.groupby(gap_groups):
+            gap_index = gap_mask.index[gap_mask]
+
+            if len(gap_index) == 0:
+                continue
+
+            gap_start = gap_index[0]
+            gap_end = gap_index[-1]
+            gap_length = len(gap_index)
+
+            previous_position = result.index.get_loc(gap_start) - 1
+            next_position = result.index.get_loc(gap_end) + 1
+
+            is_internal_gap = (
+                previous_position >= 0
+                and next_position < len(result)
+                and pd.notna(original_series.iloc[previous_position])
+                and pd.notna(original_series.iloc[next_position])
+            )
+
+            if is_internal_gap and gap_length <= max_temporal_gap_hours:
+                result.loc[gap_index, target_col] = interpolated_series.loc[
+                    gap_index
+                ]
+
+    missing_after_temporal = int(result[target_col].isna().sum())
+
+    # Strategy 3 step: seasonal mean by month + weekday + hour.
+    if missing_after_temporal > 0:
+        seasonal_keys = pd.DataFrame(
+            {
+                "month": result.index.month,
+                "day_of_week": result.index.dayofweek,
+                "hour": result.index.hour,
+                target_col: result[target_col].values,
+            },
+            index=result.index,
+        )
+
+        seasonal_mean = (
+            seasonal_keys
+            .groupby(
+                ["month", "day_of_week", "hour"],
+                dropna=False,
+            )[target_col]
+            .transform("mean")
+        )
+
+        result[target_col] = result[target_col].fillna(seasonal_mean)
+
+    missing_after_seasonal = int(result[target_col].isna().sum())
+
+    result[target_col] = result[target_col].astype("float32")
+    result = result.reset_index()
+
+    print(
+        "✅ PM2.5 strategy 3 applied — "
+        f"missing before: {missing_before} | "
+        f"after temporal interpolation: {missing_after_temporal} | "
+        f"after seasonal imputation: {missing_after_seasonal}"
+    )
+
+    if missing_after_seasonal > 0:
+        print(
+            "⚠️ Some PM2.5 values could not be imputed because no valid "
+            "seasonal mean was available for the same month, weekday and hour."
+        )
+
+    return result
+
 def clean_data(df_openaq: pd.DataFrame, df_openmeteo: pd.DataFrame) -> pd.DataFrame:
     """
     Receives raw data from OpenAQ and OpenMeteo separately,
@@ -184,15 +327,28 @@ def clean_data(df_openaq: pd.DataFrame, df_openmeteo: pd.DataFrame) -> pd.DataFr
     All timestamps must be UTC.
     """
 
-    # ── OpenAQ ────────────────────────────────────────────────────────
+    #  OpenAQ
     aq = df_openaq.copy()
 
-    aq["time"]  = pd.to_datetime(aq["time"], utc=True).dt.floor("h")
+    aq["time"] = pd.to_datetime(aq["time"], utc=True).dt.floor("h")
+
+    # Defensive check: if this ever runs on a file where the pm25 sensor
+    # failed to come through, fail with a clear message instead of a raw
+    # KeyError. The main safeguard is the quality gate in fast.py's /update
+    # (which should stop a bad file from ever reaching here) — this is the
+    # fallback in case that gate is bypassed (e.g. local mode, manual file).
+    if "pm25" not in aq.columns:
+        raise ValueError(
+            "Coluna 'pm25' ausente no arquivo operacional do OpenAQ — "
+            "o sensor de PM2.5 provavelmente falhou na coleta. "
+            "Verifique o /update mais recente."
+        )
+
     aq["PM2.5"] = pd.to_numeric(aq["pm25"], errors="coerce").astype("float32")
     aq = aq[["time", "PM2.5"]].copy()
     aq = aq.groupby("time", as_index=False)["PM2.5"].mean()
 
-    # ── OpenMeteo ─────────────────────────────────────────────────────
+    #  OpenMeteo
     met = df_openmeteo.copy()
 
     met["time"] = pd.to_datetime(met["time"], utc=True).dt.floor("h")
@@ -201,16 +357,21 @@ def clean_data(df_openaq: pd.DataFrame, df_openmeteo: pd.DataFrame) -> pd.DataFr
         met[col] = met[col].astype("float32")
     met = met.drop_duplicates(subset=["time"], keep="first")
 
-    # ── Merge ─────────────────────────────────────────────────────────
+    #  Merge
     df = met.merge(aq, on="time", how="left")
     df["time"] = pd.to_datetime(df["time"], utc=True)
     df = df.astype({k: v for k, v in DTYPES_RAW.items() if k != "time"})
 
-    # ── Data Quality ──────────────────────────────────────────────────
+    #  Data Quality
     df = df.dropna(subset=["temperature_2m", "relative_humidity_2m",
                             "precipitation", "wind_speed_10m"])
     df = df[COLUMN_NAMES_RAW]
     df = df.sort_values("time").reset_index(drop=True)
+
+    # Apply the same missing-value treatment used during training of the
+    # selected LightGBM model: temporal interpolation for gaps <= 12h,
+    # followed by seasonal mean imputation for remaining gaps.
+    df = apply_pm25_strategy_3(df)
 
     print(f"✅ data cleaned — {len(df)} linhas | "
           f"range: {df['time'].min()} → {df['time'].max()} | "

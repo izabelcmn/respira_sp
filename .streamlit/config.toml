@@ -1,0 +1,15 @@
+# Tema base do Streamlit. Isto define as cores "nativas" (widgets, fundo, texto).
+# O acabamento fino do visual (cards, gauge, chat) vem do CSS em utils/styling.py.
+# Mantemos aqui só o essencial para que, mesmo sem o CSS, o app já abra escuro.
+
+[theme]
+base = "dark"
+primaryColor = "#3B82F6"            # azul de destaque (links, sliders, foco)
+backgroundColor = "#0B1220"         # fundo principal (navy bem escuro)
+secondaryBackgroundColor = "#16202E" # fundo dos cards / sidebar
+textColor = "#E6EDF5"               # texto primário
+font = "sans serif"
+
+[server]
+# Evita o "Please wait..." ficar reabrindo quando você salva o arquivo editando.
+runOnSave = true

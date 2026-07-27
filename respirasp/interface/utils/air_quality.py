@@ -139,7 +139,7 @@ def consultar_recomendacao_saude(classe: str) -> str:
 
 
 contexto_poluente = """
-PM2.5 são partículas muito finas presentes no ar, com diâmetro menor que 2,5 micrômetros.
+MP2.5 são partículas muito finas presentes no ar, com diâmetro menor que 2,5 micrômetros.
 Por serem pequenas, podem penetrar profundamente nos pulmões e afetar a saúde respiratória e cardiovascular.
 """.strip()
 
@@ -151,6 +151,14 @@ Quanto pior a qualidade do ar, maior deve ser a restrição a atividades física
 Para classes Moderada, Ruim, Muito Ruim e Péssima, o foco da recomendação é reduzir ou evitar esforço físico pesado ao ar livre, especialmente para grupos sensíveis.
 """.strip()
 
+contexto_ponto = """
+O ponto de previsão corresponde à localização da estação de monitoramento de Congonhas, no município de São Paulo (SP).
+As coordenadas geográficas do ponto são latitude -23.6473149° e longitude -46.6643635°.
+Os dados de qualidade do ar associados ao ponto podem ser consultados na plataforma OpenAQ.
+Site para consulta dos dados: https://openaq.org/
+Sempre que o usuário perguntar onde consultar os dados, sobre a fonte dos dados ou sobre o ponto de monitoramento, informe o site da OpenAQ (https://openaq.org/).
+As previsões e recomendações geradas referem-se às condições estimadas de qualidade do ar na região de Congonhas e não devem ser interpretadas como representativas de todo o município de São Paulo.
+""".strip()
 
 def responder_qualidade_ar(df: pd.DataFrame, col_pm25: str = FORECAST_COL) -> str:
     """Gera uma resposta técnica resumida para uma previsão horária de PM2.5."""
@@ -162,7 +170,7 @@ def responder_qualidade_ar(df: pd.DataFrame, col_pm25: str = FORECAST_COL) -> st
 📅 Período analisado:
 {previsao['inicio']:%d/%m/%Y %H:%M} até {previsao['fim']:%d/%m/%Y %H:%M}
 
-🌫 PM2.5 médio previsto:
+🌫 MP2.5 médio previsto:
 {previsao['pm25_medio']:.1f} µg/m³
 
 📊 Classificação:

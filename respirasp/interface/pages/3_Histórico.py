@@ -1,3 +1,4 @@
+
 """pages/3_Histórico.py"""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,7 +14,8 @@ HIST_CSV = Path(LOCAL_DATA_PATH) / \
            "data_interpolacao_gaps_maiores_medias" / \
            "dados_full_features_2016_2019_fill_mean.csv"
 
-st.set_page_config(page_title="Histórico · Respira SP", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Histórico · Respira SP", page_icon="📊",
+                   layout="wide", initial_sidebar_state="expanded")
 inject_css()
 
 st.markdown("## 📊 Histórico de PM2.5 (2016–2019)")

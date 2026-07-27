@@ -2,28 +2,19 @@
 utils/styling.py
 ================
 Tudo que é "aparência" mora aqui, separado da lógica de dados e dos gráficos.
-Assim você consegue mudar o visual inteiro mexendo só neste arquivo.
-
-Contém:
-  - PALETTE / IQAR_BANDS .... tokens de design (cores) num só lugar
-  - inject_css() ........... injeta o CSS global (cards, sidebar, chat, tipografia)
-  - pm25_to_iqar() ......... converte concentração de PM2.5 (µg/m³) -> IQAr (CETESB)
-  - classify_iqar() ........ devolve (rótulo, cor) para um valor de IQAr
-  - render_gauge() ......... desenha o anel/gauge SVG do IQAr (o elemento-assinatura)
-  - kpi_card() ............. helper para cartõezinhos de número
 """
 
 from __future__ import annotations
 import streamlit as st
 
 PALETTE = {
-    "bg":        "#0B1220",  # fundo da página
-    "panel":     "#16202E",  # fundo dos cards
-    "panel_2":   "#1C2738",  # variação (hover / chat bot)
+    "bg":        "#0B1220",
+    "panel":     "#16202E",
+    "panel_2":   "#1C2738",
     "border":    "rgba(255,255,255,0.07)",
-    "text":      "#E6EDF5",  # texto principal
-    "muted":     "#8B97A8",  # texto secundário / legendas
-    "brand":     "#3B82F6",  # azul de destaque (nav ativa, balão do usuário)
+    "text":      "#E6EDF5",
+    "muted":     "#8B97A8",
+    "brand":     "#3B82F6",
     "brand_dk":  "#1E3A8A",
 }
 
@@ -44,17 +35,14 @@ def pm25_to_iqar(conc: float) -> float:
     """
     Converte concentração de PM2.5 (µg/m³, média 24h) em IQAr usando a tabela
     da CETESB e interpolação linear — exatamente o procedimento oficial.
-    Mantemos isso correto porque a banca pode perguntar de onde sai o "62".
     """
     if conc <= 0:
         return 0.0
-    # Procura em qual faixa a concentração cai e interpola.
     for i in range(len(_PM25_CONC) - 1):
         c_lo, c_hi = _PM25_CONC[i], _PM25_CONC[i + 1]
         if c_lo <= conc <= c_hi:
             i_lo, i_hi = _PM25_IQAR[i], _PM25_IQAR[i + 1]
             return i_lo + (i_hi - i_lo) * (conc - c_lo) / (c_hi - c_lo)
-    # Acima do último ponto: estende a última inclinação (caso extremo).
     return _PM25_IQAR[-1]
 
 
@@ -66,8 +54,6 @@ def classify_iqar(iqar: float) -> tuple[str, str]:
     return IQAR_BANDS[-1][1], IQAR_BANDS[-1][2]
 
 
-# 2) CSS GLOBAL
-#    Injete uma única vez, no topo de cada página, com inject_css().
 def inject_css() -> None:
     p = PALETTE
     st.markdown(
@@ -81,23 +67,88 @@ def inject_css() -> None:
         }}
         .stApp {{ background: {p['bg']}; }}
 
-        /* esconde o menu/rodapé padrão do Streamlit para ficar mais "produto" */
-        #MainMenu, footer, header {{ visibility: hidden; }}
+        /* Mantém o header porque nele ficam os controles nativos que
+           recolhem e reabrem a sidebar. Escondemos somente os itens que não
+           interessam ao usuário final. */
+        #MainMenu, footer {{ visibility: hidden; }}
+        [data-testid="stAppDeployButton"] {{ display: none !important; }}
+        header[data-testid="stHeader"] {{
+            background: transparent;
+            z-index: 1001;
+        }}
 
-        /* largura útil um pouco maior */
-        .block-container {{ padding-top: 1.4rem; max-width: 1400px; }}
+        /* O botão de abrir a sidebar fica dentro do header/toolbar em várias
+           versões do Streamlit. Nunca esconder o toolbar inteiro. */
+        [data-testid="stToolbar"] {{
+            display: flex !important;
+            visibility: visible !important;
+        }}
 
-        /* ----- sidebar ----- */
+        [data-testid="stSidebarCollapsedControl"],
+        button[data-testid="stBaseButton-headerNoPadding"],
+        button[kind="headerNoPadding"] {{
+            display: inline-flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            position: relative !important;
+            z-index: 1002 !important;
+        }}
+
+        /* ===== SIDEBAR — estilo visual + botão « de recolher/voltar ATIVO =====
+           Antes a sidebar era travada sempre aberta com transform/visibility/
+           margin-left em !important, e o próprio botão « ficava com
+           display:none — por isso "o botão de voltar" não fazia nada.
+           Agora só estilizamos aparência (cor, largura quando expandida) e
+           deixamos o estado aria-expanded="false" livre para o comportamento
+           nativo do Streamlit recolher a sidebar e reexibir o botão de abrir. */
         section[data-testid="stSidebar"] {{
             background: {p['panel']};
             border-right: 1px solid {p['border']};
         }}
+
+        /* A largura fixa vale apenas quando a sidebar está aberta. Não usamos
+           transform/margin/visibility aqui, pois isso quebraria o abre/fecha
+           nativo do Streamlit. */
+        section[data-testid="stSidebar"][aria-expanded="true"] {{
+            min-width: 244px !important;
+            width: 244px !important;
+        }}
+        section[data-testid="stSidebar"][aria-expanded="true"] > div {{
+            width: 244px !important;
+        }}
         section[data-testid="stSidebar"] * {{ color: {p['text']}; }}
 
-        /* ----- cards -----
-           Usamos st.container(border=True) como card (HTML nativo do Streamlit).
-           Estilizamos o wrapper do container em vez de injetar <div> manuais —
-           isso evita o bug de a div fechar sozinha entre chamadas de st.markdown. */
+        /* Botão de recolher dentro da sidebar. */
+        section[data-testid="stSidebar"] button {{
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+        }}
+
+        /* No celular a sidebar ocupa a maior parte da tela, mas não ultrapassa
+           a largura disponível. O botão nativo continua responsável por fechar
+           e reabrir o menu hambúrguer. */
+        @media (max-width: 768px) {{
+            section[data-testid="stSidebar"][aria-expanded="true"] {{
+                width: min(88vw, 320px) !important;
+                min-width: min(88vw, 320px) !important;
+                max-width: 88vw !important;
+            }}
+            section[data-testid="stSidebar"][aria-expanded="true"] > div {{
+                width: min(88vw, 320px) !important;
+                max-width: 88vw !important;
+            }}
+            .block-container {{
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
+            }}
+        }}
+
+        /* largura útil um pouco maior */
+        .block-container {{ padding-top: 1.4rem; max-width: 1400px; }}
+
+        /* ----- cards ----- */
         div[data-testid="stVerticalBlockBorderWrapper"] {{
             background: {p['panel']};
             border: 1px solid {p['border']} !important;
@@ -109,8 +160,6 @@ def inject_css() -> None:
             font-size: 0.95rem; font-weight: 600; color: {p['text']};
             margin: 6px 0 12px 0; letter-spacing: .2px;
         }}
-        /* .card: só para blocos HTML AUTOCONTIDOS (kpi_card), nunca para envolver
-           widgets do Streamlit ao longo de várias chamadas. */
         .card {{
             background: {p['panel']}; border: 1px solid {p['border']};
             border-radius: 16px; padding: 16px 18px;
@@ -122,7 +171,7 @@ def inject_css() -> None:
         .gauge-unit {{ font-size: .75rem; color: {p['muted']}; letter-spacing: 2px; }}
 
         /* ----- chat ----- */
-        .chat-wrap {{ display: flex; flex-direction: column; gap: 10px; }}
+        .chat-wrap {{ display: flex; flex-direction: column; gap: 20px; margin-bottom: 20px; }}
         .bubble {{
             max-width: 85%; padding: 10px 13px; border-radius: 14px;
             font-size: .85rem; line-height: 1.35;
@@ -158,10 +207,9 @@ def inject_css() -> None:
     )
 
 
-# 3) COMPONENTES VISUAIS PRONTOS
 def render_gauge(iqar: float, max_scale: float = 200.0) -> str:
     label, color = classify_iqar(iqar)
-    frac = max(0.0, min(iqar / max_scale, 1.0))   # fração do anel a preencher
+    frac = max(0.0, min(iqar / max_scale, 1.0))
     r = 52
     circ = 2 * 3.14159 * r
     dash = circ * frac
